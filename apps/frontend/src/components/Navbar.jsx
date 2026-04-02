@@ -86,7 +86,7 @@ function Navbar() {
             <nav className={`navbar ${isVisible ? 'navbar-visible' : 'navbar-hidden'}`}>
                 <div className="nav-container">
                     <Link to="/" className="nav-logo">
-                        <img src="/images/logo.svg" alt="Salahuddin Library Logo" className="logo-image" />
+                        <img src="/images/logo.svg" alt="" className="logo-image" />
                         <span className="logo-text">Salahuddin Library</span>
                     </Link>
 

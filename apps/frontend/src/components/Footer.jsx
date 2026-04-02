@@ -27,7 +27,7 @@ function Footer() {
                 {/* Logo & About */}
                 <div className="footer-col">
                     <div className="footer-logo">
-                        <img src="/images/logo.svg" alt="Salahuddin Library Logo" className="logo-image" />
+                        <img src="/images/logo.svg" alt="" className="logo-image" />
                         <span>Salahuddin Library</span>
                     </div>
                     <p className="footer-about">
