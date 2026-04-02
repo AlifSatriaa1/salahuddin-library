@@ -64,7 +64,7 @@ function Register() {
                 toast.success('Registrasi berhasil! Silakan cek email Anda untuk verifikasi.')
             }
         } else {
-            // Translate common Supabase errors to Indonesian
+            // Translate common Firebase Auth errors to Indonesian
             let errorMessage = result.error || 'Terjadi kesalahan pada server'
 
             if (errorMessage.toLowerCase().includes('invalid email') || errorMessage.toLowerCase().includes('is invalid')) {

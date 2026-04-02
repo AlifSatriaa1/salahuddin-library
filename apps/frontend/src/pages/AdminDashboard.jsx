@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { supabase } from '../config/supabase'
+import { db, storage } from '../config/firebase'
+import { ref, get, set, update, remove, push, query, orderByChild, equalTo } from 'firebase/database'
+import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage'
 import { initialBooks } from '../data/initialBooks'
 import Navbar from '../components/Navbar'
 import Footer from '../components/Footer'
@@ -42,11 +44,13 @@ function AdminDashboard() {
 
     const fetchStats = async () => {
         try {
-            const { count: booksCount } = await supabase.from('books').select('*', { count: 'exact', head: true })
-            const { count: usersCount } = await supabase.from('users').select('*', { count: 'exact', head: true })
-            // Query active loans (status = 'borrowed')
-            const { count: loansCount } = await supabase.from('loans').select('*', { count: 'exact', head: true }).eq('status', 'borrowed')
-            setStats({ books: booksCount || 0, users: usersCount || 0, loans: loansCount || 0 })
+            const booksSnap = await get(ref(db, 'books'))
+            const usersSnap = await get(ref(db, 'users'))
+            const loansSnap = await get(ref(db, 'loans'))
+            const booksCount = booksSnap.exists() ? Object.keys(booksSnap.val()).length : 0
+            const usersCount = usersSnap.exists() ? Object.keys(usersSnap.val()).length : 0
+            const loansCount = loansSnap.exists() ? Object.values(loansSnap.val()).filter(l => l.status === 'borrowed').length : 0
+            setStats({ books: booksCount, users: usersCount, loans: loansCount })
         } catch (e) { console.error(e) }
         finally { setLoading(false) }
     }
@@ -56,30 +60,39 @@ function AdminDashboard() {
             if (loadMore) setLoadingMoreBooks(true)
             else setLoading(true)
 
-            const start = loadMore ? booksList.length : 0
-            const end = start + ITEMS_PER_PAGE - 1
+            const booksSnap = await get(ref(db, 'books'))
+            const bookTagsSnap = await get(ref(db, 'book_tags'))
+            const tagsSnap = await get(ref(db, 'tags'))
+            const booksData = booksSnap.exists() ? booksSnap.val() : {}
+            const bookTagsData = bookTagsSnap.exists() ? bookTagsSnap.val() : {}
+            const tagsData = tagsSnap.exists() ? tagsSnap.val() : {}
 
-            let query = supabase
-                .from('books')
-                .select('*, book_tags(tag_id, tags(id, name, color))')
-                .order('created_at', { ascending: false })
-                .range(start, end)
+            let allBooks = Object.entries(booksData).map(([id, book]) => {
+                const tagIds = bookTagsData[id] ? Object.keys(bookTagsData[id]) : []
+                const book_tags = tagIds.map(tagId => ({
+                    tag_id: tagId,
+                    tags: tagsData[tagId] ? { id: tagId, ...tagsData[tagId] } : null
+                }))
+                return { id, ...book, book_tags }
+            })
+
+            // Sort by created_at descending
+            allBooks.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
 
             if (searchQuery) {
-                query = query.ilike('title', `%${searchQuery}%`)
+                allBooks = allBooks.filter(b => b.title?.toLowerCase().includes(searchQuery.toLowerCase()))
             }
 
-            const { data, error } = await query
-
-            if (error) throw error
+            const start = loadMore ? booksList.length : 0
+            const pageBooks = allBooks.slice(start, start + ITEMS_PER_PAGE)
 
             if (loadMore) {
-                setBooksList(prev => [...prev, ...(data || [])])
+                setBooksList(prev => [...prev, ...pageBooks])
             } else {
-                setBooksList(data || [])
+                setBooksList(pageBooks)
             }
 
-            setHasMoreBooks((data || []).length === ITEMS_PER_PAGE)
+            setHasMoreBooks(pageBooks.length === ITEMS_PER_PAGE)
         } catch (e) { console.error(e) }
         finally {
             setLoading(false)
@@ -88,8 +101,13 @@ function AdminDashboard() {
     }
 
     const fetchAvailableTags = async () => {
-        const { data } = await supabase.from('tags').select('*').order('name')
-        setAvailableTags(data || [])
+        const tagsSnap = await get(ref(db, 'tags'))
+        if (tagsSnap.exists()) {
+            const data = Object.entries(tagsSnap.val()).map(([id, t]) => ({ id, ...t })).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+            setAvailableTags(data)
+        } else {
+            setAvailableTags([])
+        }
     }
 
     const handleSubmitBook = async (e) => {
@@ -103,36 +121,29 @@ function AdminDashboard() {
             const bookData = {
                 title: bookForm.title,
                 author: bookForm.author,
-                // year: bookForm.year, // Removed
-                stock: bookForm.stock,
-                cover: bookForm.cover
-                // category is deprecated, we use tags now
+                stock: parseInt(bookForm.stock) || 0,
+                cover: bookForm.cover,
+                created_at: editingBook?.created_at || new Date().toISOString()
             }
 
             let bookId = editingBook?.id
 
             if (editingBook) {
-                // Update existing book
-                const { error } = await supabase.from('books').update(bookData).eq('id', bookId)
-                if (error) throw error
-
-                // Update tags: Delete all existing and re-insert
-                await supabase.from('book_tags').delete().eq('book_id', bookId)
+                await update(ref(db, `books/${bookId}`), bookData)
+                await remove(ref(db, `book_tags/${bookId}`))
             } else {
-                // Insert new book
-                const { data, error } = await supabase.from('books').insert([bookData]).select()
-                if (error) throw error
-                bookId = data[0].id
+                const newBookRef = push(ref(db, 'books'))
+                bookId = newBookRef.key
+                await set(newBookRef, bookData)
             }
 
             // Insert new tags
             if (bookForm.tags && bookForm.tags.length > 0) {
-                const tagInserts = bookForm.tags.map(tagId => ({
-                    book_id: bookId,
-                    tag_id: tagId
-                }))
-                const { error: tagError } = await supabase.from('book_tags').insert(tagInserts)
-                if (tagError) throw tagError
+                const tagUpdates = {}
+                bookForm.tags.forEach(tagId => {
+                    tagUpdates[tagId] = true
+                })
+                await set(ref(db, `book_tags/${bookId}`), tagUpdates)
             }
 
             toast.success(editingBook ? 'Buku berhasil diupdate!' : 'Buku berhasil ditambahkan!')
@@ -172,8 +183,8 @@ function AdminDashboard() {
         if (!confirmed) return
 
         try {
-            const { error } = await supabase.from('books').delete().eq('id', id)
-            if (error) throw error
+            await remove(ref(db, `books/${id}`))
+            await remove(ref(db, `book_tags/${id}`))
             toast.success('Buku berhasil dihapus!')
             fetchBooks()
             fetchStats()
@@ -220,30 +231,49 @@ function AdminDashboard() {
         else setLoading(true)
 
         try {
+            const usersSnap = await get(ref(db, 'users'))
+            if (!usersSnap.exists()) { setUsersList([]); return }
+
+            let allUsers = Object.entries(usersSnap.val())
+                .map(([id, u]) => ({ id, ...u }))
+                .filter(u => u.role !== 'admin')
+                .sort((a, b) => new Date(b.join_date || 0) - new Date(a.join_date || 0))
+
             const start = loadMore ? usersList.length : 0
-            const end = start + ITEMS_PER_PAGE - 1
-
-            const { data, error } = await supabase
-                .from('users')
-                .select('*')
-                .neq('role', 'admin') // Exclude admin users
-                .order('join_date', { ascending: false })
-                .range(start, end)
-
-            if (error) throw error
+            const pageUsers = allUsers.slice(start, start + ITEMS_PER_PAGE)
 
             if (loadMore) {
-                setUsersList(prev => [...prev, ...(data || [])])
+                setUsersList(prev => [...prev, ...pageUsers])
             } else {
-                setUsersList(data || [])
+                setUsersList(pageUsers)
             }
 
-            setHasMoreUsers((data || []).length === ITEMS_PER_PAGE)
+            setHasMoreUsers(pageUsers.length === ITEMS_PER_PAGE)
         } catch (error) {
             console.error("Error fetching users:", error)
         } finally {
             setLoading(false)
             setLoadingMoreUsers(false)
+        }
+    }
+
+    const handleDeleteUser = async (userToDelete) => {
+        const confirmed = await showConfirm({
+            title: 'Hapus User',
+            message: `Yakin ingin menghapus secara permanen dari database: "${userToDelete.name}" (${userToDelete.email})?`,
+            confirmText: 'Ya, Hapus Permanen',
+            cancelText: 'Batal',
+            type: 'error'
+        })
+        if (!confirmed) return
+
+        try {
+            await remove(ref(db, `users/${userToDelete.id}`))
+            toast.success(`Akun ${userToDelete.name} berhasil dihapus dari database!`)
+            fetchUsers()
+            fetchStats()
+        } catch (error) {
+            toast.error('Gagal menghapus user: ' + error.message)
         }
     }
 
@@ -608,19 +638,8 @@ function AdminDashboard() {
                                                                 console.warn('Image compression failed, using original file', err);
                                                             }
 
-                                                            const fileExt = compressedFile.name.split('.').pop() || 'jpg'
-                                                            const fileName = `${Math.random()}.${fileExt}`
-                                                            const filePath = `${fileName}`
-
-                                                            const { error: uploadError } = await supabase.storage
-                                                                .from('book-covers')
-                                                                .upload(filePath, compressedFile)
-
-                                                            if (uploadError) throw uploadError
-
-                                                            const { data: { publicUrl } } = supabase.storage
-                                                                .from('book-covers')
-                                                                .getPublicUrl(filePath)
+                                                            const { uploadToCloudinary } = await import('../utils/cloudinary');
+                                                            const publicUrl = await uploadToCloudinary(compressedFile);
 
                                                             setBookForm({ ...bookForm, cover: publicUrl })
                                                         } catch (error) {
@@ -761,7 +780,7 @@ function AdminDashboard() {
                                                                 <span style={{ color: '#9ca3af', fontSize: '0.85rem' }}>Belum upload</span>
                                                             )}
                                                         </td>
-                                                        <td>
+                                                        <td style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                                                             {usr.member_status !== 'verified' ? (
                                                                 <button
                                                                     className="btn btn-sm"
@@ -777,12 +796,7 @@ function AdminDashboard() {
                                                                         if (!confirmed) return
 
                                                                         try {
-                                                                            const { error } = await supabase
-                                                                                .from('users')
-                                                                                .update({ member_status: 'verified' })
-                                                                                .eq('id', usr.id)
-
-                                                                            if (error) throw error
+                                                                            await update(ref(db, `users/${usr.id}`), { member_status: 'verified' })
                                                                             toast.success(`${usr.name} berhasil dijadikan Member!`)
                                                                             fetchUsers()
                                                                         } catch (error) {
@@ -805,6 +819,17 @@ function AdminDashboard() {
                                                                     Sudah Member
                                                                 </span>
                                                             )}
+                                                            <button
+                                                                className="btn btn-sm"
+                                                                style={{ background: '#ef4444', color: '#fff' }}
+                                                                onClick={() => handleDeleteUser(usr)}
+                                                                title="Hapus Akun Permanen"
+                                                            >
+                                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                                                    <polyline points="3 6 5 6 21 6"></polyline>
+                                                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                                                </svg>
+                                                            </button>
                                                         </td>
                                                     </tr>
                                                 ))
@@ -833,26 +858,26 @@ function AdminDashboard() {
 
                         {/* LOANS TAB */}
                         {activeTab === 'loans' && (
-                            <LoansTable supabase={supabase} />
+                            <LoansTable />
                         )}
 
                         {/* TAGS TAB */}
                         {activeTab === 'tags' && (
-                            <TagsManagement supabase={supabase} />
+                            <TagsManagement />
                         )}
 
                         {/* DONATIONS TAB */}
                         {activeTab === 'donations' && (
-                            <DonationsTable supabase={supabase} />
+                            <DonationsTable />
                         )}
 
                         {activeTab === 'ktp' && (
-                            <KtpVerificationTable supabase={supabase} />
+                            <KtpVerificationTable />
                         )}
 
                         {/* FEEDBACK TAB */}
                         {activeTab === 'feedback' && (
-                            <FeedbackTable supabase={supabase} />
+                            <FeedbackTable />
                         )}
 
                         {/* INFO TAB */}
@@ -867,68 +892,46 @@ function AdminDashboard() {
 }
 
 // Sub-component for Loans Table
-function LoansTable({ supabase }) {
+function LoansTable() {
     const [loans, setLoans] = useState([])
     const [loading, setLoading] = useState(true)
-    const [hasMore, setHasMore] = useState(true)
+    const [hasMore, setHasMore] = useState(false)
     const [loadingMore, setLoadingMore] = useState(false)
     const { toast, showConfirm } = useNotification()
-    const ITEMS_PER_PAGE = 10
 
     useEffect(() => {
         fetchLoans()
     }, [])
 
-    const fetchLoans = async (loadMore = false) => {
-        if (loadMore) setLoadingMore(true)
-        else setLoading(true)
-
+    const fetchLoans = async () => {
+        setLoading(true)
         try {
-            const start = loadMore ? loans.length : 0
-            const end = start + ITEMS_PER_PAGE - 1
+            const loansSnap = await get(ref(db, 'loans'))
+            if (!loansSnap.exists()) { setLoans([]); return }
 
-            // First get loans with book info
-            const { data: loansData, error: loansError } = await supabase
-                .from('loans')
-                .select(`
-                    id, 
-                    user_id,
-                    book_id,
-                    borrow_date, 
-                    due_date, 
-                    status, 
-                    renewal_count,
-                    books(title, cover)
-                `)
-                .eq('status', 'borrowed')
-                .order('due_date', { ascending: true })
-                .range(start, end)
+            const allLoans = Object.entries(loansSnap.val())
+                .map(([id, l]) => ({ id, ...l }))
+                .filter(l => l.status === 'borrowed')
+                .sort((a, b) => new Date(a.due_date) - new Date(b.due_date))
 
-            if (loansError) throw loansError
-
-            // Then get user info for each loan
-            const loansWithUsers = await Promise.all(
-                (loansData || []).map(async (loan) => {
-                    const { data: userData } = await supabase
-                        .from('users')
-                        .select('name, email')
-                        .eq('id', loan.user_id)
-                        .single()
-                    return { ...loan, users: userData }
+            // Fetch book and user info
+            const loansWithInfo = await Promise.all(
+                allLoans.map(async (loan) => {
+                    const bookSnap = await get(ref(db, `books/${loan.book_id}`))
+                    const userSnap = await get(ref(db, `users/${loan.user_id}`))
+                    return {
+                        ...loan,
+                        books: bookSnap.exists() ? bookSnap.val() : null,
+                        users: userSnap.exists() ? userSnap.val() : null
+                    }
                 })
             )
 
-            if (loadMore) {
-                setLoans(prev => [...prev, ...loansWithUsers])
-            } else {
-                setLoans(loansWithUsers)
-            }
-            setHasMore(loansData.length === ITEMS_PER_PAGE)
+            setLoans(loansWithInfo)
         } catch (error) {
             console.error("Error fetching loans:", error)
         } finally {
             setLoading(false)
-            setLoadingMore(false)
         }
     }
 
@@ -943,8 +946,6 @@ function LoansTable({ supabase }) {
 
         try {
             const currentCount = loan.renewal_count || 0
-
-            // Admin can override limits, but let's warn if > 3
             if (currentCount >= 3) {
                 const proceed = await showConfirm({
                     title: 'Batas Maksimal Tercapai',
@@ -959,15 +960,11 @@ function LoansTable({ supabase }) {
             const newDue = new Date(currentDue)
             newDue.setDate(newDue.getDate() + 5)
 
-            const { error } = await supabase
-                .from('loans')
-                .update({
-                    due_date: newDue.toISOString(),
-                    renewal_count: currentCount + 1
-                })
-                .eq('id', loan.id)
+            await update(ref(db, `loans/${loan.id}`), {
+                due_date: newDue.toISOString(),
+                renewal_count: currentCount + 1
+            })
 
-            if (error) throw error
             toast.success('Berhasil diperpanjang 5 hari.')
             fetchLoans()
         } catch (err) {
@@ -985,23 +982,15 @@ function LoansTable({ supabase }) {
         if (!confirm) return
 
         try {
-            // 1. Update loan status
-            const { error: loanError } = await supabase
-                .from('loans')
-                .update({
-                    status: 'returned',
-                    return_date: new Date().toISOString()
-                })
-                .eq('id', loan.id)
+            await update(ref(db, `loans/${loan.id}`), {
+                status: 'returned',
+                return_date: new Date().toISOString()
+            })
 
-            if (loanError) throw loanError
-
-            // 2. Increment book stock
-            // We need to fetch current stock first or use an RPC if concurrency is high, but simple read-update is fine here for single admin
-            const { data: bookData } = await supabase.from('books').select('stock').eq('id', loan.book_id).single()
-            if (bookData) {
-                await supabase.from('books').update({ stock: bookData.stock + 1 }).eq('id', loan.book_id)
-            }
+            // Increment book stock
+            const bookSnap = await get(ref(db, `books/${loan.book_id}/stock`))
+            const currentStock = bookSnap.exists() ? bookSnap.val() : 0
+            await set(ref(db, `books/${loan.book_id}/stock`), currentStock + 1)
 
             toast.success('Buku berhasil dikembalikan.')
             fetchLoans()
@@ -1134,47 +1123,34 @@ function LoansTable({ supabase }) {
 }
 
 // Sub-component for KTP Verification Table
-function KtpVerificationTable({ supabase }) {
+function KtpVerificationTable() {
     const [users, setUsers] = useState([])
     const [loading, setLoading] = useState(true)
-    const [hasMore, setHasMore] = useState(true)
+    const [hasMore, setHasMore] = useState(false)
     const [loadingMore, setLoadingMore] = useState(false)
     const [previewKtp, setPreviewKtp] = useState(null)
     const { toast, showConfirm } = useNotification()
-    const ITEMS_PER_PAGE = 10
 
     useEffect(() => {
         fetchPendingUsers()
     }, [])
 
-    const fetchPendingUsers = async (loadMore = false) => {
-        if (loadMore) setLoadingMore(true)
-        else setLoading(true)
-
+    const fetchPendingUsers = async () => {
+        setLoading(true)
         try {
-            const start = loadMore ? users.length : 0
-            const end = start + ITEMS_PER_PAGE - 1
+            const usersSnap = await get(ref(db, 'users'))
+            if (!usersSnap.exists()) { setUsers([]); return }
 
-            const { data, error } = await supabase
-                .from('users')
-                .select('*')
-                .eq('member_status', 'pending_approval')
-                .order('join_date', { ascending: false })
-                .range(start, end)
+            const pending = Object.entries(usersSnap.val())
+                .map(([id, u]) => ({ id, ...u }))
+                .filter(u => u.member_status === 'pending_approval')
+                .sort((a, b) => new Date(b.join_date || 0) - new Date(a.join_date || 0))
 
-            if (error) throw error
-
-            if (loadMore) {
-                setUsers(prev => [...prev, ...(data || [])])
-            } else {
-                setUsers(data || [])
-            }
-            setHasMore((data || []).length === ITEMS_PER_PAGE)
+            setUsers(pending)
         } catch (error) {
             console.error("Error fetching pending users:", error)
         } finally {
             setLoading(false)
-            setLoadingMore(false)
         }
     }
 
@@ -1189,12 +1165,7 @@ function KtpVerificationTable({ supabase }) {
         if (!confirmed) return
 
         try {
-            const { error } = await supabase
-                .from('users')
-                .update({ member_status: 'approved' })
-                .eq('id', userId)
-
-            if (error) throw error
+            await update(ref(db, `users/${userId}`), { member_status: 'approved' })
 
             // Call Backend Node.js API to send Email Notification
             if (userEmail && userName) {
@@ -1222,36 +1193,17 @@ function KtpVerificationTable({ supabase }) {
         const reason = prompt('Alasan penolakan (opsional):')
 
         try {
-            // Delete the KTP file from storage if it exists
+            // Try to delete the KTP file from Firebase Storage if it exists
             if (ktpUrl) {
                 try {
-                    // Extract the filepath from the public URL
-                    // Example URL: https://[project_id].supabase.co/storage/v1/object/public/ktp-uploads/user-uuid/ktp.jpg
-                    const urlParts = ktpUrl.split('/ktp-uploads/');
-                    if (urlParts.length > 1) {
-                        const filePath = urlParts[1];
-                        const { error: storageError } = await supabase.storage
-                            .from('ktp-uploads')
-                            .remove([filePath]);
-
-                        if (storageError) {
-                            console.error('Failed to delete KTP from storage:', storageError);
-                        } else {
-                            console.log('Successfully deleted KTP file:', filePath);
-                        }
-                    }
+                    const fileRef = storageRef(storage, ktpUrl)
+                    await deleteObject(fileRef)
                 } catch (imgErr) {
                     console.error('Error during KTP deletion:', imgErr);
                 }
             }
 
-            // Update user status in database
-            const { error } = await supabase
-                .from('users')
-                .update({ member_status: 'non-member', ktp_url: null })
-                .eq('id', userId)
-
-            if (error) throw error
+            await update(ref(db, `users/${userId}`), { member_status: 'non-member', ktp_url: null })
             toast.warning('KTP ditolak. Foto dihapus agar tidak memenuhi memori.')
             fetchPendingUsers()
         } catch (error) {
@@ -1382,7 +1334,7 @@ function KtpVerificationTable({ supabase }) {
 }
 
 // Sub-component for Tags Management
-function TagsManagement({ supabase }) {
+function TagsManagement() {
     const [tags, setTags] = useState([])
     const [books, setBooks] = useState([])
     const [loading, setLoading] = useState(true)
@@ -1401,12 +1353,13 @@ function TagsManagement({ supabase }) {
     const fetchTags = async () => {
         try {
             setLoading(true)
-            const { data, error } = await supabase
-                .from('tags')
-                .select('*')
-                .order('name')
-            if (error) throw error
-            setTags(data || [])
+            const snap = await get(ref(db, 'tags'))
+            if (snap.exists()) {
+                const data = Object.entries(snap.val()).map(([id, t]) => ({ id, ...t })).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+                setTags(data)
+            } else {
+                setTags([])
+            }
         } catch (error) {
             console.error('Error fetching tags:', error)
         } finally {
@@ -1415,18 +1368,30 @@ function TagsManagement({ supabase }) {
     }
 
     const fetchAllBooks = async () => {
-        const { data } = await supabase.from('books').select('id, title, cover').order('title')
-        setBooks(data || [])
+        const snap = await get(ref(db, 'books'))
+        if (snap.exists()) {
+            const data = Object.entries(snap.val()).map(([id, b]) => ({ id, title: b.title, cover: b.cover, author: b.author })).sort((a, b) => (a.title || '').localeCompare(b.title || ''))
+            setBooks(data)
+        } else {
+            setBooks([])
+        }
     }
 
     const fetchBooksForTag = async (tagId) => {
-        const { data, error } = await supabase
-            .from('book_tags')
-            .select('book_id, books(id, title, cover, author)')
-            .eq('tag_id', tagId)
-        if (!error) {
-            setTagBooks(data?.map(bt => bt.books) || [])
-        }
+        const bookTagsSnap = await get(ref(db, 'book_tags'))
+        if (!bookTagsSnap.exists()) { setTagBooks([]); return }
+        const allBookTags = bookTagsSnap.val()
+        const matchingBookIds = []
+        Object.entries(allBookTags).forEach(([bookId, tags]) => {
+            if (tags[tagId]) matchingBookIds.push(bookId)
+        })
+        const booksForTag = await Promise.all(
+            matchingBookIds.map(async (bookId) => {
+                const bookSnap = await get(ref(db, `books/${bookId}`))
+                return bookSnap.exists() ? { id: bookId, ...bookSnap.val() } : null
+            })
+        )
+        setTagBooks(booksForTag.filter(Boolean))
     }
 
     const handleAddTag = async (e) => {
@@ -1434,11 +1399,8 @@ function TagsManagement({ supabase }) {
         if (!newTagName.trim()) return
 
         try {
-            const { error } = await supabase.from('tags').insert([{
-                name: newTagName.trim(),
-                color: newTagColor
-            }])
-            if (error) throw error
+            const newTagRef = push(ref(db, 'tags'))
+            await set(newTagRef, { name: newTagName.trim(), color: newTagColor })
             setNewTagName('')
             setNewTagColor('#6b7280')
             fetchTags()
@@ -1457,8 +1419,16 @@ function TagsManagement({ supabase }) {
         })
         if (!confirmed) return
         try {
-            const { error } = await supabase.from('tags').delete().eq('id', tagId)
-            if (error) throw error
+            await remove(ref(db, `tags/${tagId}`))
+            // Also remove this tag from all book_tags
+            const btSnap = await get(ref(db, 'book_tags'))
+            if (btSnap.exists()) {
+                const updates = {}
+                Object.entries(btSnap.val()).forEach(([bookId, tags]) => {
+                    if (tags[tagId]) updates[`book_tags/${bookId}/${tagId}`] = null
+                })
+                if (Object.keys(updates).length > 0) await update(ref(db), updates)
+            }
             if (selectedTag?.id === tagId) {
                 setSelectedTag(null)
                 setTagBooks([])
@@ -1476,19 +1446,17 @@ function TagsManagement({ supabase }) {
 
     const handleAssignBook = async (bookId) => {
         try {
-            const { error } = await supabase.from('book_tags').insert([{
-                book_id: bookId,
-                tag_id: selectedTag.id
-            }])
-            if (error) throw error
+            // Check if already assigned
+            const existSnap = await get(ref(db, `book_tags/${bookId}/${selectedTag.id}`))
+            if (existSnap.exists()) {
+                toast.warning('Buku sudah ada di tag ini')
+                return
+            }
+            await set(ref(db, `book_tags/${bookId}/${selectedTag.id}`), true)
             fetchBooksForTag(selectedTag.id)
             setShowAssignModal(false)
         } catch (error) {
-            if (error.code === '23505') {
-                toast.warning('Buku sudah ada di tag ini')
-            } else {
-                toast.error('Error: ' + error.message)
-            }
+            toast.error('Error: ' + error.message)
         }
     }
 
@@ -1502,12 +1470,7 @@ function TagsManagement({ supabase }) {
         })
         if (!confirmed) return
         try {
-            const { error } = await supabase
-                .from('book_tags')
-                .delete()
-                .eq('book_id', bookId)
-                .eq('tag_id', selectedTag.id)
-            if (error) throw error
+            await remove(ref(db, `book_tags/${bookId}/${selectedTag.id}`))
             fetchBooksForTag(selectedTag.id)
         } catch (error) {
             toast.error('Error: ' + error.message)
@@ -1645,33 +1608,49 @@ function TagsManagement({ supabase }) {
             {showAssignModal && (
                 <div style={{
                     position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-                    background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
+                    background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem'
                 }} onClick={() => setShowAssignModal(false)}>
                     <div style={{
-                        background: 'white', borderRadius: '16px', padding: '1.5rem', width: '90%', maxWidth: '500px', maxHeight: '70vh', overflow: 'hidden'
+                        background: 'white', borderRadius: '20px', padding: '1.5rem', width: '100%', maxWidth: '500px', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
                     }} onClick={(e) => e.stopPropagation()}>
-                        <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>Tambah Buku ke "{selectedTag.name}"</h3>
-                        <div style={{ maxHeight: '50vh', overflow: 'auto' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexShrink: 0 }}>
+                            <h3 style={{ margin: 0, color: '#1e293b', fontSize: '1.25rem', fontWeight: 'bold' }}>Tambah Buku ke Kategori</h3>
+                            <button onClick={() => setShowAssignModal(false)} style={{ background: '#f1f5f9', border: 'none', color: '#64748b', cursor: 'pointer', padding: '0.4rem', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }} onMouseOver={e => e.currentTarget.style.background = '#e2e8f0'} onMouseOut={e => e.currentTarget.style.background = '#f1f5f9'}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                            </button>
+                        </div>
+                        
+                        <div className="custom-scrollbar" style={{ flex: 1, overflowY: 'auto', paddingRight: '0.5rem', margin: '0 -0.5rem', paddingLeft: '0.5rem' }}>
                             {availableBooks.length === 0 ? (
-                                <p style={{ textAlign: 'center', color: '#6b7280', padding: '1rem' }}>Semua buku sudah ada di tag ini</p>
+                                <div style={{ textAlign: 'center', color: '#64748b', padding: '3rem 1rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
+                                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="1"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                                    <p style={{ margin: 0, fontSize: '0.95rem' }}>Semua buku sudah terhubung ke tag "{selectedTag.name}".</p>
+                                </div>
                             ) : (
                                 availableBooks.map(book => (
                                     <div key={book.id} style={{
-                                        display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.75rem',
-                                        borderBottom: '1px solid #f3f4f6', cursor: 'pointer', transition: 'background 0.15s'
+                                        display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.75rem', marginBottom: '0.75rem',
+                                        border: '1px solid #e2e8f0', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.2s', background: '#fafafa'
                                     }} onClick={() => handleAssignBook(book.id)}
-                                        onMouseOver={(e) => e.currentTarget.style.background = '#f9fafb'}
-                                        onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}>
-                                        <img src={book.cover} alt="" style={{ width: '35px', height: '48px', borderRadius: '4px', objectFit: 'cover' }} />
-                                        <span style={{ fontWeight: '500' }}>{book.title}</span>
+                                        onMouseOver={(e) => { e.currentTarget.style.borderColor = '#10b981'; e.currentTarget.style.background = '#f0fdf4'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(16, 185, 129, 0.1)' }}
+                                        onMouseOut={(e) => { e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.background = '#fafafa'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none' }}>
+                                        <img src={book.cover} alt="" style={{ width: '45px', height: '64px', borderRadius: '6px', objectFit: 'cover', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }} />
+                                        <div style={{ flex: 1, overflow: 'hidden' }}>
+                                            <span style={{ fontWeight: '600', color: '#334155', display: 'block', marginBottom: '0.2rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{book.title}</span>
+                                            <span style={{ fontSize: '0.8rem', color: '#64748b' }}>Oleh: {book.author || 'Tidak diketahui'}</span>
+                                        </div>
+                                        <div style={{ color: '#10b981', background: '#ecfdf5', padding: '0.4rem', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                                        </div>
                                     </div>
                                 ))
                             )}
                         </div>
-                        <button onClick={() => setShowAssignModal(false)} style={{
-                            width: '100%', marginTop: '1rem', padding: '0.75rem', border: 'none',
-                            background: '#f3f4f6', borderRadius: '8px', cursor: 'pointer', fontWeight: '500'
-                        }}>Tutup</button>
+                        <div style={{ display: 'flex', justifyContent: 'center', marginTop: '1.25rem', flexShrink: 0 }}>
+                            <button onClick={() => setShowAssignModal(false)} className="btn btn-outline" style={{
+                                padding: '0.75rem 3rem', fontWeight: '600', borderRadius: '12px', minWidth: '150px'
+                            }}>Selesai</button>
+                        </div>
                     </div>
                 </div>
             )}
@@ -1680,59 +1659,60 @@ function TagsManagement({ supabase }) {
 }
 
 // Sub-component for Donations Table
-function DonationsTable({ supabase }) {
+function DonationsTable() {
     const [donations, setDonations] = useState([])
     const [loading, setLoading] = useState(true)
-    const [hasMore, setHasMore] = useState(true)
+    const [hasMore, setHasMore] = useState(false)
     const [loadingMore, setLoadingMore] = useState(false)
-    const { toast } = useNotification()
-    const ITEMS_PER_PAGE = 10
+    const [selectedDonation, setSelectedDonation] = useState(null)
+    const { toast, showConfirm } = useNotification()
 
     useEffect(() => {
         fetchDonations()
     }, [])
 
-    const fetchDonations = async (loadMore = false) => {
-        if (loadMore) setLoadingMore(true)
-        else setLoading(true)
-
+    const fetchDonations = async () => {
+        setLoading(true)
         try {
-            const start = loadMore ? donations.length : 0
-            const end = start + ITEMS_PER_PAGE - 1
-
-            const { data, error } = await supabase
-                .from('donations')
-                .select('*')
-                .order('created_at', { ascending: false })
-                .range(start, end)
-
-            if (error) throw error
-
-            if (loadMore) {
-                setDonations(prev => [...prev, ...(data || [])])
+            const snap = await get(ref(db, 'donations'))
+            if (snap.exists()) {
+                const data = Object.entries(snap.val()).map(([id, d]) => ({ id, ...d })).sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
+                setDonations(data)
             } else {
-                setDonations(data || [])
+                setDonations([])
             }
-            setHasMore((data || []).length === ITEMS_PER_PAGE)
         } catch (error) {
             console.error("Error fetching donations:", error)
         } finally {
             setLoading(false)
-            setLoadingMore(false)
         }
     }
 
     const updateStatus = async (id, newStatus) => {
         try {
-            const { error } = await supabase
-                .from('donations')
-                .update({ status: newStatus })
-                .eq('id', id)
-
-            if (error) throw error
+            await update(ref(db, `donations/${id}`), { status: newStatus })
             fetchDonations()
         } catch (error) {
             toast.error('Error: ' + error.message)
+        }
+    }
+
+    const handleDelete = async (id) => {
+        const confirmed = await showConfirm({
+            title: 'Hapus Donasi',
+            message: 'Yakin ingin menghapus secara permanen data donasi ini?',
+            confirmText: 'Ya, Hapus',
+            cancelText: 'Batal',
+            type: 'error'
+        });
+        if (!confirmed) return;
+
+        try {
+            await remove(ref(db, `donations/${id}`));
+            toast.success('Data donasi berhasil dihapus!');
+            fetchDonations();
+        } catch (error) {
+            toast.error('Gagal menghapus donasi: ' + error.message);
         }
     }
 
@@ -1801,16 +1781,28 @@ function DonationsTable({ supabase }) {
                                 <td>
                                     <div style={{
                                         maxWidth: '200px',
-                                        whiteSpace: 'pre-wrap',
+                                        whiteSpace: 'nowrap',
                                         fontSize: '0.85rem',
-                                        maxHeight: '80px',
-                                        overflow: 'auto'
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        color: '#64748b'
                                     }}>
                                         {donation.book_titles}
                                     </div>
                                 </td>
                                 <td>{getStatusBadge(donation.status)}</td>
-                                <td>
+                                <td style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                    <button
+                                        className="btn btn-sm"
+                                        style={{ background: '#3b82f6', color: '#fff' }}
+                                        onClick={() => setSelectedDonation(donation)}
+                                        title="Detail Donasi"
+                                    >
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                            <circle cx="12" cy="12" r="3"></circle>
+                                        </svg>
+                                    </button>
                                     <select
                                         value={donation.status}
                                         onChange={(e) => updateStatus(donation.id, e.target.value)}
@@ -1827,6 +1819,17 @@ function DonationsTable({ supabase }) {
                                         <option value="received">Diterima</option>
                                         <option value="cancelled">Dibatalkan</option>
                                     </select>
+                                    <button
+                                        className="btn btn-sm"
+                                        style={{ background: '#ef4444', color: '#fff' }}
+                                        onClick={() => handleDelete(donation.id)}
+                                        title="Hapus Donasi"
+                                    >
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                            <polyline points="3 6 5 6 21 6"></polyline>
+                                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                        </svg>
+                                    </button>
                                 </td>
                             </tr>
                         ))
@@ -1847,61 +1850,69 @@ function DonationsTable({ supabase }) {
                     </button>
                 </div>
             )}
+
+            {selectedDonation && (
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                    background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem'
+                }} onClick={() => setSelectedDonation(null)}>
+                    <div style={{
+                        background: 'white', borderRadius: '20px', padding: '1.5rem', width: '100%', maxWidth: '500px', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)'
+                    }} onClick={(e) => e.stopPropagation()}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexShrink: 0 }}>
+                            <h3 style={{ margin: 0, color: '#1e293b', fontSize: '1.25rem', fontWeight: 'bold' }}>Detail Donasi</h3>
+                            <button onClick={() => setSelectedDonation(null)} style={{ background: '#f1f5f9', border: 'none', color: '#64748b', cursor: 'pointer', padding: '0.4rem', borderRadius: '50%', display: 'flex' }}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+                        </div>
+                        <div className="custom-scrollbar" style={{ flex: 1, overflowY: 'auto', paddingRight: '0.5rem', margin: '0 -0.5rem', paddingLeft: '0.5rem' }}>
+                            <div style={{ marginBottom: '1rem' }}><strong style={{ display: 'block', color: '#64748b', fontSize: '0.85rem' }}>Nama Donatur</strong><span style={{ fontSize: '1rem', color: '#1e293b' }}>{selectedDonation.donor_name}</span></div>
+                            <div style={{ marginBottom: '1rem' }}><strong style={{ display: 'block', color: '#64748b', fontSize: '0.85rem' }}>WhatsApp</strong><a href={`https://wa.me/${selectedDonation.whatsapp.replace(/^0/, '62')}`} target="_blank" rel="noopener noreferrer" style={{ color: '#10b981', fontWeight: '500' }}>{selectedDonation.whatsapp}</a></div>
+                            <div style={{ marginBottom: '1rem' }}><strong style={{ display: 'block', color: '#64748b', fontSize: '0.85rem' }}>Tanggal</strong><span style={{ fontSize: '1rem', color: '#1e293b' }}>{new Date(selectedDonation.created_at).toLocaleString('id-ID')}</span></div>
+                            <div style={{ marginBottom: '1rem' }}><strong style={{ display: 'block', color: '#64748b', fontSize: '0.85rem' }}>Jumlah Buku</strong><span style={{ fontSize: '1rem', color: '#1e293b' }}>{selectedDonation.book_count} buku</span></div>
+                            <div style={{ marginBottom: '1rem' }}><strong style={{ display: 'block', color: '#64748b', fontSize: '0.85rem' }}>Daftar/Judul Buku</strong><div style={{ background: '#f8fafc', padding: '1rem', borderRadius: '8px', border: '1px solid #e2e8f0', whiteSpace: 'pre-wrap', color: '#334155', marginTop: '0.5rem' }}>{selectedDonation.book_titles}</div></div>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'center', marginTop: '1.25rem', flexShrink: 0 }}>
+                            <button onClick={() => setSelectedDonation(null)} className="btn btn-outline" style={{ padding: '0.75rem 3rem', fontWeight: '600', borderRadius: '12px', minWidth: '150px' }}>Tutup</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }
 
 // Sub-component for Feedback Table
-function FeedbackTable({ supabase }) {
+function FeedbackTable() {
     const [feedbacks, setFeedbacks] = useState([])
     const [loading, setLoading] = useState(true)
-    const [hasMore, setHasMore] = useState(true)
+    const [hasMore, setHasMore] = useState(false)
     const [loadingMore, setLoadingMore] = useState(false)
+    const [selectedFeedback, setSelectedFeedback] = useState(null)
     const { toast, showConfirm } = useNotification()
-    const ITEMS_PER_PAGE = 10
 
     useEffect(() => {
         fetchFeedbacks()
     }, [])
 
-    const fetchFeedbacks = async (loadMore = false) => {
-        if (loadMore) setLoadingMore(true)
-        else setLoading(true)
-
+    const fetchFeedbacks = async () => {
+        setLoading(true)
         try {
-            const start = loadMore ? feedbacks.length : 0
-            const end = start + ITEMS_PER_PAGE - 1
-
-            const { data, error } = await supabase
-                .from('feedback')
-                .select('*')
-                .order('created_at', { ascending: false })
-                .range(start, end)
-
-            if (error) throw error
-
-            if (loadMore) {
-                setFeedbacks(prev => [...prev, ...(data || [])])
+            const snap = await get(ref(db, 'feedback'))
+            if (snap.exists()) {
+                const data = Object.entries(snap.val()).map(([id, f]) => ({ id, ...f })).sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
+                setFeedbacks(data)
             } else {
-                setFeedbacks(data || [])
+                setFeedbacks([])
             }
-            setHasMore((data || []).length === ITEMS_PER_PAGE)
         } catch (error) {
             console.error("Error fetching feedbacks:", error)
         } finally {
             setLoading(false)
-            setLoadingMore(false)
         }
     }
 
     const handleMarkAsRead = async (id, currentStatus) => {
         try {
-            const { error } = await supabase
-                .from('feedback')
-                .update({ is_read: !currentStatus })
-                .eq('id', id)
-
-            if (error) throw error
+            await update(ref(db, `feedback/${id}`), { is_read: !currentStatus })
             fetchFeedbacks()
         } catch (error) {
             toast.error('Error: ' + error.message)
@@ -1919,12 +1930,7 @@ function FeedbackTable({ supabase }) {
         if (!confirmed) return
 
         try {
-            const { error } = await supabase
-                .from('feedback')
-                .delete()
-                .eq('id', id)
-
-            if (error) throw error
+            await remove(ref(db, `feedback/${id}`))
             toast.success('Feedback berhasil dihapus!')
             fetchFeedbacks()
         } catch (error) {
@@ -1959,7 +1965,9 @@ function FeedbackTable({ supabase }) {
                             <tr key={fb.id} style={{ background: fb.is_read ? 'white' : '#f0fdf4' }}>
                                 <td style={{ fontWeight: fb.is_read ? '400' : '600' }}>{fb.name}</td>
                                 <td>{fb.email}</td>
-                                <td style={{ maxWidth: '300px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{fb.message}</td>
+                                <td style={{ maxWidth: '300px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#64748b' }}>
+                                    {fb.message}
+                                </td>
                                 <td style={{ fontSize: '0.85rem', color: '#64748b' }}>
                                     {new Date(fb.created_at).toLocaleDateString('id-ID', {
                                         day: 'numeric',
@@ -1983,6 +1991,20 @@ function FeedbackTable({ supabase }) {
                                 </td>
                                 <td>
                                     <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                        <button
+                                            className="btn btn-sm"
+                                            style={{ background: '#3b82f6', color: '#fff' }}
+                                            onClick={() => {
+                                                setSelectedFeedback(fb);
+                                                if (!fb.is_read) handleMarkAsRead(fb.id, false);
+                                            }}
+                                            title="Detail Pesan"
+                                        >
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                                <circle cx="12" cy="12" r="3"></circle>
+                                            </svg>
+                                        </button>
                                         <button
                                             className="btn btn-sm"
                                             onClick={() => handleMarkAsRead(fb.id, fb.is_read)}
@@ -2016,6 +2038,46 @@ function FeedbackTable({ supabase }) {
                     >
                         {loadingMore ? 'Memuat...' : 'Load More'}
                     </button>
+                </div>
+            )}
+
+            {selectedFeedback && (
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                    background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem'
+                }} onClick={() => setSelectedFeedback(null)}>
+                    <div style={{
+                        background: 'white', borderRadius: '20px', padding: '1.5rem', width: '100%', maxWidth: '500px', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)'
+                    }} onClick={(e) => e.stopPropagation()}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexShrink: 0 }}>
+                            <h3 style={{ margin: 0, color: '#1e293b', fontSize: '1.25rem', fontWeight: 'bold' }}>Detail Pesan Feedback</h3>
+                            <button onClick={() => setSelectedFeedback(null)} style={{ background: '#f1f5f9', border: 'none', color: '#64748b', cursor: 'pointer', padding: '0.4rem', borderRadius: '50%', display: 'flex' }}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+                        </div>
+                        <div className="custom-scrollbar" style={{ flex: 1, overflowY: 'auto', paddingRight: '0.5rem', margin: '0 -0.5rem', paddingLeft: '0.5rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem', paddingBottom: '1rem', borderBottom: '1px solid #e2e8f0' }}>
+                                <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#3b82f6', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '1.2rem', textTransform: 'uppercase' }}>
+                                    {selectedFeedback.name.charAt(0)}
+                                </div>
+                                <div>
+                                    <div style={{ fontWeight: '600', color: '#1e293b' }}>{selectedFeedback.name}</div>
+                                    <div style={{ fontSize: '0.85rem', color: '#64748b' }}>{selectedFeedback.email}</div>
+                                </div>
+                            </div>
+                            <div style={{ marginBottom: '1rem' }}>
+                                <strong style={{ display: 'block', color: '#64748b', fontSize: '0.85rem', marginBottom: '0.5rem' }}>Tanggal Pengiriman</strong>
+                                <span style={{ fontSize: '0.95rem', color: '#1e293b' }}>{new Date(selectedFeedback.created_at).toLocaleString('id-ID')}</span>
+                            </div>
+                            <div>
+                                <strong style={{ display: 'block', color: '#64748b', fontSize: '0.85rem', marginBottom: '0.5rem' }}>Isi Pesan:</strong>
+                                <div style={{ background: '#f8fafc', padding: '1rem', borderRadius: '12px', border: '1px solid #e2e8f0', whiteSpace: 'pre-wrap', color: '#334155', lineHeight: '1.6', fontSize: '0.95rem' }}>
+                                    {selectedFeedback.message}
+                                </div>
+                            </div>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'center', marginTop: '1.25rem', flexShrink: 0 }}>
+                            <button onClick={() => setSelectedFeedback(null)} className="btn btn-outline" style={{ padding: '0.75rem 3rem', fontWeight: '600', borderRadius: '12px', minWidth: '150px' }}>Tutup</button>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>

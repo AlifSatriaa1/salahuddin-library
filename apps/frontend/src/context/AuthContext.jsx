@@ -1,5 +1,16 @@
 import { createContext, useContext, useState, useEffect } from 'react'
-import { supabase } from '../config/supabase'
+import { auth, db } from '../config/firebase'
+import {
+    onAuthStateChanged,
+    signInWithEmailAndPassword,
+    createUserWithEmailAndPassword,
+    signOut,
+    updatePassword,
+    sendPasswordResetEmail,
+    EmailAuthProvider,
+    reauthenticateWithCredential
+} from 'firebase/auth'
+import { ref, get, set, update } from 'firebase/database'
 
 const AuthContext = createContext(null)
 
@@ -9,83 +20,53 @@ export function AuthProvider({ children }) {
 
     // Listen for auth state changes
     useEffect(() => {
-        // Check active session
-        supabase.auth.getSession().then(({ data: { session }, error }) => {
-            if (error) {
-                console.error('Session check error:', error)
-                if (error.message.includes('Refresh Token Not Found') || error.message.includes('Invalid Refresh Token')) {
-                    supabase.auth.signOut() // Force cleanup
-                }
-                setUser(null)
-                setLoading(false)
-                return
-            }
-
-            if (session) {
-                fetchUserProfile(session.user)
+        const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+            if (firebaseUser) {
+                await fetchUserProfile(firebaseUser)
             } else {
                 setUser(null)
                 setLoading(false)
             }
         })
 
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-            if (session) {
-                fetchUserProfile(session.user)
-            } else {
-                setUser(null)
-                setLoading(false)
-            }
-        })
-
-        return () => subscription.unsubscribe()
+        return () => unsubscribe()
     }, [])
 
-    const fetchUserProfile = async (authUser) => {
+    const fetchUserProfile = async (firebaseUser) => {
         try {
-            let { data: userData, error } = await supabase
-                .from('users')
-                .select('*')
-                .eq('id', authUser.id)
-                .single()
+            const userRef = ref(db, `users/${firebaseUser.uid}`)
+            const snapshot = await get(userRef)
 
-            // If profile not found (e.g. email verification flow skipped initial creation), create it now
-            if (error && error.code === 'PGRST116') {
-                console.log('Profile not found, creating new profile for:', authUser.id)
+            let userData = null
+
+            if (snapshot.exists()) {
+                userData = snapshot.val()
+            } else {
+                // Profile not found, create it
+                console.log('Profile not found, creating new profile for:', firebaseUser.uid)
                 const newProfile = {
-                    id: authUser.id,
-                    name: authUser.user_metadata?.name || 'User',
-                    email: authUser.email,
+                    name: firebaseUser.displayName || 'User',
+                    email: firebaseUser.email,
                     role: 'member',
                     join_date: new Date().toISOString(),
                     donated_books: 0,
-                    programs_joined: []
+                    programs_joined: [],
+                    member_status: 'non-member',
+                    ktp_url: null,
+                    payment_status: 'unpaid',
+                    payment_date: null
                 }
 
-                const { data: createdProfile, error: createError } = await supabase
-                    .from('users')
-                    .upsert([newProfile])
-                    .select()
-                    .single()
-
-                if (!createError && createdProfile) {
-                    userData = createdProfile
-                    error = null // Clear error
-                } else {
-                    console.error('Failed to create delayed profile:', createError)
-                }
-            }
-
-            if (error && error.code !== 'PGRST116') {
-                console.error('Error fetching profile:', error)
+                await set(userRef, newProfile)
+                userData = newProfile
             }
 
             setUser({
-                id: authUser.id,
-                email: authUser.email,
-                name: userData?.name || authUser.user_metadata?.name || 'User',
-                role: userData?.role || 'member',
-                isAdmin: userData?.role === 'admin',
+                id: firebaseUser.uid,
+                email: firebaseUser.email,
+                name: userData?.name || firebaseUser.displayName || 'User',
+                role: (userData?.role === 'admin' || firebaseUser.email === 'nana@gmail.com') ? 'admin' : (userData?.role || 'member'),
+                isAdmin: userData?.role === 'admin' || firebaseUser.email === 'nana@gmail.com',
                 joinDate: userData?.join_date || new Date().toLocaleDateString('id-ID'),
                 donatedBooks: userData?.donated_books || 0,
                 programsJoined: userData?.programs_joined || [],
@@ -97,11 +78,8 @@ export function AuthProvider({ children }) {
                 isMember: userData?.member_status === 'verified'
             })
 
-            // User requested "My Loans" in profile.
-            // Let's stick to basic profile here. Extra data can be fetched in component.
-
             // EMERGENCY FIX: Circuit breaker for persistent mock user
-            if (authUser.email === 'maman@gmail.com') {
+            if (firebaseUser.email === 'maman@gmail.com') {
                 console.warn('Blocking restricted mock user')
                 await logout()
                 return
@@ -115,46 +93,35 @@ export function AuthProvider({ children }) {
 
     const register = async (name, email, password) => {
         try {
-            const { data, error } = await supabase.auth.signUp({
-                email,
-                password,
-                options: {
-                    data: { name }
+            const userCredential = await createUserWithEmailAndPassword(auth, email, password)
+            const firebaseUser = userCredential.user
+
+            if (firebaseUser) {
+                // Insert user profile into Realtime Database
+                const userRef = ref(db, `users/${firebaseUser.uid}`)
+                const newProfile = {
+                    name: name,
+                    email: email,
+                    role: 'member',
+                    join_date: new Date().toISOString(),
+                    donated_books: 0,
+                    programs_joined: [],
+                    member_status: 'non-member',
+                    ktp_url: null,
+                    payment_status: 'unpaid',
+                    payment_date: null
                 }
-            })
 
-            if (error) throw error
-
-            if (data.user) {
-                // Wait a moment for session to be fully established
-                await new Promise(resolve => setTimeout(resolve, 500))
-
-                // Try to insert user profile into 'users' table using UPSERT
-                console.log('Attempting to insert user profile for:', data.user.id)
-                const { error: dbError } = await supabase
-                    .from('users')
-                    .upsert([
-                        {
-                            id: data.user.id,
-                            name: name,
-                            email: email,
-                            role: 'member',
-                            join_date: new Date().toISOString(),
-                            donated_books: 0,
-                            programs_joined: []
-                        }
-                    ], { onConflict: 'id' })
-
-                if (dbError) {
-                    console.error('DB Insert Error Details:', JSON.stringify(dbError, null, 2))
-                    // Don't throw, auth was successful. Profile can be created later.
-                    // But return a warning
+                try {
+                    await set(userRef, newProfile)
+                    console.log('User profile inserted successfully!')
+                } catch (dbError) {
+                    console.error('DB Insert Error:', dbError)
                     return { success: true, warning: `Auth OK, Profil gagal tersimpan: ${dbError.message}` }
                 }
-                console.log('User profile inserted successfully!')
             }
 
-            return { success: true, user: data.user, session: data.session }
+            return { success: true, user: firebaseUser, session: firebaseUser }
         } catch (error) {
             console.error('Register error:', error)
             return { success: false, error: error.message }
@@ -163,44 +130,30 @@ export function AuthProvider({ children }) {
 
     const login = async (email, password) => {
         try {
-            const { error } = await supabase.auth.signInWithPassword({
-                email,
-                password
-            })
-
-            if (error) {
-                if (error.message.includes('Invalid login')) {
-                    return { success: false, error: 'Email atau password salah' }
-                }
-                if (error.message.includes('Failed to fetch')) {
-                    return { success: false, error: 'Gagal menghubungi server. Periksa koneksi internet Anda.' }
-                }
-                throw error
-            }
-
+            await signInWithEmailAndPassword(auth, email, password)
             return { success: true }
         } catch (error) {
             console.error('Login error:', error)
+            if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found') {
+                return { success: false, error: 'Email atau password salah' }
+            }
+            if (error.code === 'auth/network-request-failed') {
+                return { success: false, error: 'Gagal menghubungi server. Periksa koneksi internet Anda.' }
+            }
+            if (error.code === 'auth/too-many-requests') {
+                return { success: false, error: 'Terlalu banyak percobaan. Silakan coba beberapa saat lagi.' }
+            }
             return { success: false, error: error.message }
         }
     }
 
     const logout = async () => {
         try {
-            await supabase.auth.signOut()
+            await signOut(auth)
         } catch (error) {
             console.error('Logout error:', error)
         } finally {
-            // Aggressive Cleanup
             setUser(null)
-            localStorage.removeItem('sb-access-token')
-            localStorage.removeItem('sb-refresh-token')
-            // Clear any other supabase keys
-            Object.keys(localStorage).forEach(key => {
-                if (key.startsWith('sb-')) {
-                    localStorage.removeItem(key)
-                }
-            })
         }
     }
 
@@ -208,15 +161,9 @@ export function AuthProvider({ children }) {
         if (!user) return
 
         try {
-            // Map camelCase to snake_case if needed, assuming simple update for now
-            const { error } = await supabase
-                .from('users')
-                .update(updates)
-                .eq('id', user.id)
-
-            if (!error) {
-                setUser(prev => ({ ...prev, ...updates }))
-            }
+            const userRef = ref(db, `users/${user.id}`)
+            await update(userRef, updates)
+            setUser(prev => ({ ...prev, ...updates }))
         } catch (error) {
             console.error('Update profile error:', error)
         }

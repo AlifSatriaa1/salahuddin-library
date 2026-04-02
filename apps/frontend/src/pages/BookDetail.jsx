@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 
-import { supabase } from '../config/supabase'
+import { db } from '../config/firebase'
+import { ref, get, update, set, push, runTransaction } from 'firebase/database'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../components/Notification'
 import Navbar from '../components/Navbar'
@@ -19,18 +20,14 @@ function BookDetail() {
     const { data: book = null, isLoading: loading, refetch: fetchBook } = useQuery({
         queryKey: ['book', bookId],
         queryFn: async () => {
-            const { data, error } = await supabase
-                .from('books')
-                .select('*')
-                .eq('id', bookId)
-                .single()
+            const bookRef = ref(db, `books/${bookId}`)
+            const snapshot = await get(bookRef)
 
-            if (error && error.code !== 'PGRST116') { // PGRST116 is "not found"
-                console.error("Error fetching book:", error)
-            }
-            return data || null
+            if (!snapshot.exists()) return null
+
+            return { id: bookId, ...snapshot.val() }
         },
-        enabled: !!bookId // Only run the query if bookId exists
+        enabled: !!bookId
     })
 
     const handleBorrow = async () => {
@@ -45,7 +42,6 @@ function BookDetail() {
             return
         }
 
-        // Check member status
         if (!user.isMember) {
             toast.warning('Maaf, hanya Member Verified yang dapat meminjam buku. Silakan lengkapi verifikasi KTP dan pembayaran di halaman profil Anda.')
             navigate('/profile?tab=membership')
@@ -67,26 +63,47 @@ function BookDetail() {
         if (!confirmed) return
 
         try {
-            const { data, error } = await supabase.rpc('borrow_book', {
-                p_book_id: parseInt(bookId),
-                p_user_id: user.id
+            // Check if user already has this book borrowed
+            const loansRef = ref(db, 'loans')
+            const loansSnap = await get(loansRef)
+            if (loansSnap.exists()) {
+                const loans = loansSnap.val()
+                const alreadyBorrowed = Object.values(loans).some(
+                    loan => loan.user_id === user.id && loan.book_id === bookId && loan.status === 'borrowed'
+                )
+                if (alreadyBorrowed) {
+                    toast.warning('Anda sudah meminjam buku ini.')
+                    return
+                }
+            }
+
+            // Create loan
+            const now = new Date()
+            const dueDate = new Date(now)
+            dueDate.setDate(dueDate.getDate() + 5)
+
+            const newLoanRef = push(ref(db, 'loans'))
+            await set(newLoanRef, {
+                user_id: user.id,
+                book_id: bookId,
+                borrow_date: now.toISOString(),
+                due_date: dueDate.toISOString(),
+                status: 'borrowed',
+                renewal_count: 0,
+                return_date: null
             })
 
-            if (error) throw error
-
-            if (data.success) {
-                toast.success(data.message)
-                // Refresh book data to update stock
-                const { data: updatedBook } = await supabase
-                    .from('books')
-                    .select('*')
-                    .eq('id', bookId)
-                    .single()
-                if (updatedBook) setBook(updatedBook)
-                navigate('/profile')
-            } else {
-                toast.warning(data.message)
+            // Decrease stock
+            const bookRef = ref(db, `books/${bookId}/stock`)
+            const stockSnap = await get(bookRef)
+            const currentStock = stockSnap.val() || 0
+            if (currentStock > 0) {
+                await set(bookRef, currentStock - 1)
             }
+
+            toast.success(`Buku "${book.title}" berhasil dipinjam selama 5 hari!`)
+            fetchBook()
+            navigate('/profile')
         } catch (error) {
             console.error('Error borrowing book:', error)
             toast.error('Gagal meminjam buku: ' + error.message)

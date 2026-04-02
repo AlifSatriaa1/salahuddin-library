@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 
-import { supabase } from '../config/supabase'
+import { db } from '../config/firebase'
+import { ref, get } from 'firebase/database'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../components/Notification'
 import Navbar from '../components/Navbar'
@@ -20,26 +21,37 @@ function Books() {
     const { data: books = [], isLoading: loadingBooks, refetch: refetchBooks } = useQuery({
         queryKey: ['books'],
         queryFn: async () => {
-            const { data, error } = await supabase
-                .from('books')
-                .select(`
-                    *,
-                    book_tags (
-                        tag_id,
-                        tags (
-                            id,
-                            name,
-                            color
-                        )
-                    )
-                `)
+            const booksRef = ref(db, 'books')
+            const snapshot = await get(booksRef)
 
-            if (error) throw error
+            if (!snapshot.exists()) return []
 
-            return data?.map(book => ({
-                ...book,
-                tags: book.book_tags?.map(bt => bt.tags).filter(Boolean) || []
-            })) || []
+            const booksData = snapshot.val()
+            const bookTagsRef = ref(db, 'book_tags')
+            const bookTagsSnap = await get(bookTagsRef)
+            const bookTagsData = bookTagsSnap.exists() ? bookTagsSnap.val() : {}
+
+            const tagsRef = ref(db, 'tags')
+            const tagsSnap = await get(tagsRef)
+            const tagsData = tagsSnap.exists() ? tagsSnap.val() : {}
+
+            return Object.entries(booksData).map(([id, book]) => {
+                // Get tags for this book
+                const bookTagIds = bookTagsData[id] ? Object.keys(bookTagsData[id]) : []
+                const tags = bookTagIds
+                    .map(tagId => tagsData[tagId] ? { id: tagId, ...tagsData[tagId] } : null)
+                    .filter(Boolean)
+
+                return {
+                    ...book,
+                    id,
+                    tags,
+                    book_tags: bookTagIds.map(tagId => ({
+                        tag_id: tagId,
+                        tags: tagsData[tagId] ? { id: tagId, ...tagsData[tagId] } : null
+                    }))
+                }
+            })
         }
     })
 
@@ -47,20 +59,22 @@ function Books() {
     const { data: categories = [], isLoading: loadingCategories } = useQuery({
         queryKey: ['categories'],
         queryFn: async () => {
-            const { data, error } = await supabase
-                .from('tags')
-                .select('*')
-                .order('name')
+            const tagsRef = ref(db, 'tags')
+            const snapshot = await get(tagsRef)
 
-            if (error) throw error
-            return data || []
+            if (!snapshot.exists()) return []
+
+            const data = snapshot.val()
+            return Object.entries(data)
+                .map(([id, tag]) => ({ id, ...tag }))
+                .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
         }
     })
 
     const loading = loadingBooks || loadingCategories;
 
     const handleDelete = async (e, bookId) => {
-        e.preventDefault() // Prevent navigation to detail
+        e.preventDefault()
         const confirmed = await showConfirm({
             title: 'Hapus Buku',
             message: 'Apakah Anda yakin ingin menghapus buku ini?',
@@ -71,15 +85,13 @@ function Books() {
         if (!confirmed) return
 
         try {
-            const { error } = await supabase
-                .from('books')
-                .delete()
-                .eq('id', bookId)
-
-            if (error) throw error
+            const { ref: dbRef, remove } = await import('firebase/database')
+            await remove(dbRef(db, `books/${bookId}`))
+            // Also remove book_tags for this book
+            await remove(dbRef(db, `book_tags/${bookId}`))
 
             toast.success('Buku berhasil dihapus')
-            fetchBooks() // Refresh list
+            refetchBooks()
         } catch (error) {
             console.error("Error deleting book:", error)
             toast.error('Gagal menghapus buku: ' + error.message)
@@ -105,7 +117,6 @@ function Books() {
     }, [activeCategory, searchQuery])
 
     const filteredBooks = books.filter(book => {
-        // Check if book has the selected tag (by tag name)
         const matchesCategory = activeCategory === 'all' ||
             book.tags?.some(tag => tag.name === activeCategory)
         const matchesSearch = book.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -301,4 +312,5 @@ function Books() {
 
 
 export default Books
+
 

@@ -41,7 +41,8 @@ const initialPrograms = [
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from './context/AuthContext'
-import { supabase } from './config/supabase'
+import { db } from './config/firebase'
+import { ref, push, set, get } from 'firebase/database'
 import { Capacitor } from '@capacitor/core'
 
 function App() {
@@ -112,16 +113,15 @@ function App() {
     }
 
     try {
-      const { error } = await supabase
-        .from('donations')
-        .insert([{
-          donor_name: donorName,
-          whatsapp: whatsapp,
-          book_count: bookCount,
-          book_titles: bookTitles
-        }])
-
-      if (error) throw error
+      const newDonationRef = push(ref(db, 'donations'))
+      await set(newDonationRef, {
+        donor_name: donorName,
+        whatsapp: whatsapp,
+        book_count: bookCount,
+        book_titles: bookTitles,
+        status: 'pending',
+        created_at: new Date().toISOString()
+      })
 
       toast.success('Terima kasih! Form donasi berhasil dikirim. Tim kami akan segera menghubungi Anda.')
       form.reset()
@@ -135,12 +135,14 @@ function App() {
     e.preventDefault()
     const form = e.target
     try {
-      const { error } = await supabase.from('feedback').insert([{
+      const newFeedbackRef = push(ref(db, 'feedback'))
+      await set(newFeedbackRef, {
         name: user ? user.name : form.feedbackName.value,
         email: user ? user.email : form.feedbackEmail.value,
-        message: form.feedbackMessage.value
-      }])
-      if (error) throw error
+        message: form.feedbackMessage.value,
+        is_read: false,
+        created_at: new Date().toISOString()
+      })
       toast.success('Terima kasih! Feedback berhasil dikirim.')
       form.reset()
     } catch (err) {
@@ -179,23 +181,10 @@ function App() {
         <h3>Memuat Aplikasi Admin...</h3>
       </div>
     )
-  }  // DEBUG: Connection Status Check
-  const [connectionStatus, setConnectionStatus] = useState('Checking...')
-  useEffect(() => {
-    supabase.from('programs').select('count', { count: 'exact', head: true })
-      .then(({ error }) => {
-        if (error) setConnectionStatus(`Error Conn: ${error.message}`)
-        else setConnectionStatus('Supabase Connected')
-      })
-      .catch(err => setConnectionStatus(`Client Error`))
-  }, [])
+  }
 
   return (
     <div className="app">
-      {/* Debug Banner */}
-      <div style={{ background: '#333', color: '#fff', padding: '5px', fontSize: '10px', textAlign: 'center' }}>
-        System Status: {connectionStatus} | Env: {import.meta.env.VITE_SUPABASE_URL ? 'Loaded' : 'Missing'}
-      </div>
 
       {/* Navigation */}
       <Navbar />
