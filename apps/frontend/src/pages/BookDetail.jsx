@@ -127,7 +127,13 @@ function BookDetail() {
             <div className="app">
                 <Navbar />
                 <div className="book-not-found">
-                    <span>📭</span>
+                    <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path>
+                            <line x1="10" y1="10" x2="14" y2="14"></line>
+                            <line x1="14" y1="10" x2="10" y2="14"></line>
+                        </svg>
+                    </div>
                     <h1>Buku tidak ditemukan</h1>
                     <Link to="/books" className="btn btn-primary">Kembali ke Katalog</Link>
                 </div>
@@ -346,10 +352,10 @@ function BookDetail() {
                                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
                                                 <span style={{ fontWeight: '600', color: '#92400e', fontSize: '0.9rem' }}>
                                                     {user.memberStatus === 'pending_approval' || user.member_status === 'pending_approval'
-                                                        ? '⏳ KTP Anda sedang diverifikasi oleh Admin'
+                                                        ? 'KTP Anda sedang diverifikasi oleh Admin'
                                                         : user.memberStatus === 'approved' || user.member_status === 'approved'
-                                                            ? '💳 KTP disetujui! Silakan lakukan pembayaran untuk mengaktifkan membership.'
-                                                            : '🪪 Anda perlu menjadi Member Verified untuk meminjam buku.'}
+                                                            ? 'KTP disetujui! Silakan lakukan pembayaran untuk mengaktifkan membership.'
+                                                            : 'Anda perlu menjadi Member Verified untuk meminjam buku.'}
                                                 </span>
                                             </div>
                                             <Link to="/profile" style={{
