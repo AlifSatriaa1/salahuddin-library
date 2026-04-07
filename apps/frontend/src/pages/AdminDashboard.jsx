@@ -788,7 +788,7 @@ function AdminDashboard() {
                                                                     onClick={async () => {
                                                                         const confirmed = await showConfirm({
                                                                             title: 'Upgrade ke Member',
-                                                                            message: `Yakin ingin menjadikan "${usr.name}" sebagai Member? Pembayaran COD sudah dikonfirmasi?`,
+                                                                            message: `Yakin ingin menjadikan "${usr.name}" sebagai Member? Pastikan Pembayaran (QRIS/COD) sudah dikonfirmasi!`,
                                                                             confirmText: 'Ya, Jadikan Member',
                                                                             cancelText: 'Batal',
                                                                             type: 'success'
@@ -2207,7 +2207,7 @@ function AdminInfoPage() {
                 'Melihat daftar KTP yang menunggu verifikasi',
                 'Melihat preview foto KTP',
                 'Menyetujui atau menolak pendaftaran anggota',
-                'Pengguna yang disetujui dapat melanjutkan ke pembayaran'
+                'Pengguna yang disetujui dapat melanjutkan ke pembayaran QRIS atau COD'
             ],
             color: '#06b6d4'
         },
