@@ -265,48 +265,43 @@ function MemberUpgradeSection({ userId, currentStatus, userEmail, userName }) {
                         </div>
                     </div>
 
-                    <div className="qris-container" style={{
+                    <div className="payment-instructions" style={{
                         textAlign: 'center', background: 'white', borderRadius: '16px',
                         padding: '1.5rem', marginBottom: '1.5rem', border: '1px solid #e2e8f0',
                         boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)'
                     }}>
-                        <p style={{ fontWeight: '600', color: '#334155', marginBottom: '1rem' }}>Scan QRIS di bawah ini:</p>
-                        <div style={{
-                            margin: '0 auto', maxWidth: '250px', padding: '1rem',
-                            border: '1px solid #f1f5f9', borderRadius: '12px', background: '#fff'
-                        }}>
-                            <img src="/images/saweria.png" alt="QRIS Saweria Salahuddin Library" style={{ width: '100%', height: 'auto', display: 'block' }} />
+                        <div style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'center' }}>
+                            <div style={{ background: '#e0f2fe', padding: '1rem', borderRadius: '50%' }}>
+                                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#0284c7" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                                </svg>
+                            </div>
                         </div>
-                        <p style={{ fontSize: '0.85rem', color: '#dc2626', marginTop: '1rem', lineHeight: '1.5', fontWeight: '600' }}>
-                            PENTING: Pastikan Anda mengisi form EMAIL di Saweria dengan ({userEmail}) agar pembayaran otomatis terkonfirmasi!
+                        <h3 style={{ color: '#1e293b', marginBottom: '0.5rem', fontSize: '1.1rem' }}>Hubungi Admin untuk Pembayaran</h3>
+                        <p style={{ fontSize: '0.9rem', color: '#64748b', marginBottom: '1.5rem', lineHeight: '1.6' }}>
+                            Silakan klik tombol di bawah untuk mendapatkan nomor rekening atau e-wallet pembayaran dari Admin kami.
                         </p>
-                        <a href="https://saweria.co/widgets/qr?streamKey=6c5634eda91b9384f50c04399a75db00" target="_blank" rel="noopener noreferrer" style={{ display: 'inline-block', marginTop: '0.75rem', padding: '0.5rem 1rem', background: '#f8fafc', color: '#3b82f6', textDecoration: 'none', borderRadius: '8px', fontSize: '0.9rem', fontWeight: '500', border: '1px solid #e2e8f0', width: '100%', boxSizing: 'border-box' }}>
-                            🔗 Klik di sini jika tidak bisa scan QR
-                        </a>
-                        <p style={{ fontSize: '0.85rem', color: '#64748b', marginTop: '0.75rem', lineHeight: '1.5' }}>
-                            Anda tidak perlu mengisi kolom pesan. Jika gagal otomatis, simpan bukti dan klik konfirmasi WhatsApp di bawah.
-                        </p>
+                        
+                        <button
+                            className="btn btn-primary"
+                            onClick={() => {
+                                const message = `Halo Admin, saya ingin melakukan pembayaran Member (50k). Saya baru saja mengunggah KTP di sistem.\n\nDetail Akun:\n\nNama: ${userName || '-'}\nEmail/ID: ${userEmail || '-'}\n\nMohon instruksi untuk nomor rekening/e-wallet pembayarannya.`
+                                window.open(`https://wa.me/628116834477?text=${encodeURIComponent(message)}`, '_blank')
+                            }}
+                            style={{
+                                width: '100%', padding: '1.1rem', fontSize: '1.05rem', fontWeight: '600',
+                                background: '#25D366', color: 'white', border: 'none', borderRadius: '14px',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem',
+                                cursor: 'pointer', transition: 'transform 0.2s',
+                                boxShadow: '0 4px 10px rgba(37, 211, 102, 0.2)'
+                            }}
+                        >
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
+                            </svg>
+                            Minta Instruksi Pembayaran
+                        </button>
                     </div>
-
-                    <button
-                        className="btn btn-primary"
-                        onClick={() => {
-                            const message = `Halo Admin Salahuddin Library! Saya ${userName || 'Member'} (${userEmail || ''}) ingin konfirmasi pembayaran membership via QRIS sebesar Rp 50.000. Berikut bukti transfernya.`
-                            window.open(`https://wa.me/6281234567890?text=${encodeURIComponent(message)}`, '_blank')
-                        }}
-                        style={{
-                            width: '100%', padding: '1.1rem', fontSize: '1.05rem', fontWeight: '600',
-                            background: '#25D366', color: 'white', border: 'none', borderRadius: '14px',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem',
-                            marginBottom: '1rem', cursor: 'pointer', transition: 'transform 0.2s',
-                            boxShadow: '0 4px 10px rgba(37, 211, 102, 0.2)'
-                        }}
-                    >
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
-                        </svg>
-                        Konfirmasi via WhatsApp
-                    </button>
 
                     <button
                         className="btn"
@@ -479,9 +474,9 @@ function Profile() {
     }
 
     const handlePayFine = async (loan, amount) => {
-        const message = `Halo Admin Salahuddin Library! Saya ${user.name} ingin konfirmasi pembayaran denda keterlambatan buku "${loan.books?.title || 'Buku'}" sebesar Rp ${amount.toLocaleString('id-ID')} via QRIS.`
-        window.open(`https://wa.me/6281234567890?text=${encodeURIComponent(message)}`, '_blank')
-        toast.info('Lakukan pembayaran via QRIS (cek di tab Membership) dan kirim bukti ke WhatsApp Admin.')
+        const message = `Halo Admin Salahuddin Library! Saya ${user.name} ingin konfirmasi pembayaran denda keterlambatan buku "${loan.books?.title || 'Buku'}" sebesar Rp ${amount.toLocaleString('id-ID')}. Mohon instruksi untuk pembayarannya.`
+        window.open(`https://wa.me/628116834477?text=${encodeURIComponent(message)}`, '_blank')
+        toast.info('Silakan hubungi Admin via WhatsApp untuk instruksi pembayaran denda.')
     }
 
     const handleLogout = async () => {
