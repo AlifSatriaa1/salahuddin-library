@@ -17,8 +17,7 @@ import '../App.css'
 // Flow: 1. Upload KTP → 2. Wait Admin Approval → 3. Payment
 function MemberUpgradeSection({ userId, currentStatus, userEmail, userName }) {
     const getStep = () => {
-        if (currentStatus === 'approved') return 3
-        if (currentStatus === 'pending_approval') return 2
+        if (currentStatus === 'pending_approval' || currentStatus === 'approved') return 2
         return 1
     }
 
@@ -70,60 +69,12 @@ function MemberUpgradeSection({ userId, currentStatus, userEmail, userName }) {
                 member_status: 'pending_approval'
             })
 
-            toast.success('KTP berhasil diupload! Mohon tunggu persetujuan dari Admin.')
+            toast.success('KTP berhasil diupload! Silakan lanjutkan ke pembayaran.')
             window.location.reload()
         } catch (err) {
             console.error('KTP upload error:', err)
             setError('Terjadi kesalahan. Coba lagi.')
         } finally {
-            setLoading(false)
-        }
-    }
-
-    // Real Midtrans Payment
-    const handlePayment = async () => {
-        setLoading(true)
-        setError('')
-
-        try {
-            await PaymentService.initiatePayment(
-                {
-                    userId: userId,
-                    customerName: userName || 'Member',
-                    customerEmail: userEmail || '',
-                    customerPhone: '',
-                    amount: 50000
-                },
-                {
-                    onSuccess: async (result) => {
-                        console.log('Payment success:', result)
-                        const userRef = ref(db, `users/${userId}`)
-                        await update(userRef, {
-                            member_status: 'verified',
-                            payment_status: 'paid',
-                            payment_date: new Date().toISOString()
-                        })
-
-                        toast.success('Pembayaran berhasil! Anda sekarang adalah Member Verified.')
-                        window.location.reload()
-                    },
-                    onPending: (result) => {
-                        console.log('Payment pending:', result)
-                        toast.info('Pembayaran sedang diproses. Silakan selesaikan pembayaran Anda.')
-                    },
-                    onError: (result) => {
-                        console.log('Payment error:', result)
-                        setError('Pembayaran gagal. Silakan coba lagi.')
-                    },
-                    onClose: () => {
-                        console.log('Payment popup closed')
-                        setLoading(false)
-                    }
-                }
-            )
-        } catch (err) {
-            console.error('Payment error:', err)
-            setError('Pembayaran online tidak tersedia saat ini. Silakan gunakan opsi "Bayar di Tempat" di bawah.')
             setLoading(false)
         }
     }
@@ -141,21 +92,16 @@ function MemberUpgradeSection({ userId, currentStatus, userEmail, userName }) {
                 Lengkapi verifikasi untuk dapat meminjam buku dari perpustakaan
             </p>
 
-            {/* Progress Steps - 3 Steps */}
-            <div className="upgrade-steps">
+            {/* Progress Steps - 2 Steps */}
+            <div className="upgrade-steps" style={{ justifyContent: 'center', gap: '2rem' }}>
                 <div className={`upgrade-step ${step >= 1 ? 'active' : ''} ${step > 1 ? 'completed' : ''}`}>
                     <span className="step-number">{step > 1 ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"></polyline></svg> : '1'}</span>
                     <span>Upload KTP</span>
                 </div>
-                <div className="step-connector"></div>
-                <div className={`upgrade-step ${step >= 2 ? 'active' : ''} ${step > 2 ? 'completed' : ''}`}>
-                    <span className="step-number">{step > 2 ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"></polyline></svg> : '2'}</span>
-                    <span>Verifikasi Admin</span>
-                </div>
-                <div className="step-connector"></div>
-                <div className={`upgrade-step ${step >= 3 ? 'active' : ''}`}>
-                    <span className="step-number">3</span>
-                    <span>Pembayaran</span>
+                <div className="step-connector" style={{ width: '60px' }}></div>
+                <div className={`upgrade-step ${step >= 2 ? 'active' : ''}`}>
+                    <span className="step-number">2</span>
+                    <span>Pembayaran & Verifikasi</span>
                 </div>
             </div>
 
@@ -217,31 +163,8 @@ function MemberUpgradeSection({ userId, currentStatus, userEmail, userName }) {
                 </div>
             )}
 
-            {/* Step 2: Waiting for Admin Approval */}
+            {/* Step 2: Payment & Final Verification */}
             {step === 2 && (
-                <div className="upgrade-content" style={{ textAlign: 'center', padding: '2rem' }}>
-                    <div style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'center' }}>
-                        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#b8860b" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                            <circle cx="12" cy="12" r="10"></circle>
-                            <polyline points="12 6 12 12 16 14"></polyline>
-                        </svg>
-                    </div>
-                    <h3 style={{ color: '#b8860b', marginBottom: '0.5rem' }}>Menunggu Verifikasi Admin</h3>
-                    <p style={{ color: '#6b7280', marginBottom: '1rem' }}>
-                        KTP Anda sudah diupload dan sedang diverifikasi oleh Admin.<br />
-                        Anda akan mendapat notifikasi setelah disetujui.
-                    </p>
-                    <div style={{
-                        background: '#fef3c7', border: '1px solid #d4af37', borderRadius: '8px',
-                        padding: '1rem', fontSize: '0.9rem', color: '#92400e'
-                    }}>
-                        <strong>Tips:</strong> Proses verifikasi biasanya memakan waktu 1x24 jam.
-                    </div>
-                </div>
-            )}
-
-            {/* Step 3: Payment with QRIS */}
-            {step === 3 && (
                 <div className="upgrade-content">
                     <div style={{
                         background: '#d1fae5', border: '1px solid #10b981', borderRadius: '12px',
@@ -255,7 +178,11 @@ function MemberUpgradeSection({ userId, currentStatus, userEmail, userName }) {
                                 <polyline points="20 6 9 17 4 12"></polyline>
                             </svg>
                         </div>
-                        <span style={{ color: '#065f46', fontWeight: '500', fontSize: '0.95rem' }}>Pendaftaran Anda telah disetujui! Silakan lakukan pembayaran membership.</span>
+                        <span style={{ color: '#065f46', fontWeight: '500', fontSize: '0.95rem' }}>
+                            {currentStatus === 'approved' 
+                                ? 'Pendaftaran Anda telah disetujui! Silakan lakukan pembayaran membership.' 
+                                : 'KTP Anda telah diunggah! Silakan lakukan pembayaran & Admin akan memverifikasi akun Anda.'}
+                        </span>
                     </div>
 
                     <div className="payment-summary" style={{ background: '#f8fafc', borderRadius: '12px', padding: '1.25rem', marginBottom: '1.5rem', border: '1px solid #e2e8f0' }}>
