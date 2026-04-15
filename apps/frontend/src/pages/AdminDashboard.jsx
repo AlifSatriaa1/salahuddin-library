@@ -1,10 +1,9 @@
-import { useState, useEffect, useRef } from 'react'
-import { Link, useNavigate, useLocation } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { db, storage } from '../config/firebase'
-import { ref, get, set, update, remove, push, query, orderByChild, equalTo } from 'firebase/database'
-import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage'
-import { initialBooks } from '../data/initialBooks'
+import { ref, get, set, update, remove, push } from 'firebase/database'
+import { ref as storageRef, deleteObject } from 'firebase/storage'
 import Navbar from '../components/Navbar'
 import Footer from '../components/Footer'
 import { useNotification } from '../components/Notification'
@@ -15,12 +14,12 @@ import './AdminDashboard.css'
 function AdminDashboard() {
     const { user, logout } = useAuth()
     const navigate = useNavigate()
-    const [activeTab, setActiveTab] = useState('dashboard') // dashboard, books, users
+    const [activeTab, setActiveTab] = useState('dashboard') // dashboard, books, users, loans, returned
     const [usersList, setUsersList] = useState([])
     const { toast, showConfirm } = useNotification()
 
-    const [stats, setStats] = useState({ books: 0, users: 0, loans: 0 })
-    const [loading, setLoading] = useState(true)
+    const [stats, setStats] = useState({ books: 0, users: 0, loans: 0, returned: 0 })
+    const [, setLoading] = useState(true)
     const [sidebarOpen, setSidebarOpen] = useState(false)
 
     // Books Management State
@@ -57,8 +56,17 @@ function AdminDashboard() {
             const loansSnap = await get(ref(db, 'loans'))
             const booksCount = booksSnap.exists() ? Object.keys(booksSnap.val()).length : 0
             const usersCount = usersSnap.exists() ? Object.keys(usersSnap.val()).length : 0
-            const loansCount = loansSnap.exists() ? Object.values(loansSnap.val()).filter(l => l.status === 'borrowed').length : 0
-            setStats({ books: booksCount, users: usersCount, loans: loansCount })
+            
+            const loansData = loansSnap.exists() ? Object.values(loansSnap.val()) : []
+            const activeLoansCount = loansData.filter(l => l.status === 'borrowed').length
+            const returnedLoansCount = loansData.filter(l => l.status === 'returned').length
+
+            setStats({ 
+                books: booksCount, 
+                users: usersCount, 
+                loans: activeLoansCount,
+                returned: returnedLoansCount
+            })
         } catch (e) { console.error(e) }
         finally { setLoading(false) }
     }
@@ -426,7 +434,7 @@ function AdminDashboard() {
                                             <p className="stat-value">{stats.users}</p>
                                         </div>
                                     </div>
-                                    <div className="stat-card">
+                                    <div className="stat-card" onClick={() => setActiveTab('loans')} style={{ cursor: 'pointer' }}>
                                         <div className="stat-icon-wrapper">
                                             <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                                 <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
@@ -438,6 +446,18 @@ function AdminDashboard() {
                                         <div className="stat-info">
                                             <h3>Peminjaman Aktif</h3>
                                             <p className="stat-value">{stats.loans}</p>
+                                        </div>
+                                    </div>
+                                    <div className="stat-card" onClick={() => setActiveTab('returned')} style={{ cursor: 'pointer' }}>
+                                        <div className="stat-icon-wrapper" style={{ background: '#dcfce7', color: '#166534' }}>
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                                                <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                                            </svg>
+                                        </div>
+                                        <div className="stat-info">
+                                            <h3>Buku Kembali</h3>
+                                            <p className="stat-value" style={{ color: '#166534' }}>{stats.returned || 0}</p>
                                         </div>
                                     </div>
                                 </div>
@@ -871,6 +891,11 @@ function AdminDashboard() {
                             <LoansTable />
                         )}
 
+                        {/* RETURNED TAB */}
+                        {activeTab === 'returned' && (
+                            <LoansTable type="returned" />
+                        )}
+
                         {/* TAGS TAB */}
                         {activeTab === 'tags' && (
                             <TagsManagement />
@@ -902,16 +927,16 @@ function AdminDashboard() {
 }
 
 // Sub-component for Loans Table
-function LoansTable() {
+function LoansTable({ type = 'borrowed' }) {
     const [loans, setLoans] = useState([])
-    const [loading, setLoading] = useState(true)
+    const [, setLoading] = useState(true)
     const getItemsPerPage = () => window.innerWidth <= 768 ? 5 : 10;
     const [visibleCount, setVisibleCount] = useState(getItemsPerPage())
     const { toast, showConfirm } = useNotification()
 
     useEffect(() => {
         fetchLoans()
-    }, [])
+    }, [type])
 
     const fetchLoans = async () => {
         setLoading(true)
@@ -921,8 +946,13 @@ function LoansTable() {
 
             const allLoans = Object.entries(loansSnap.val())
                 .map(([id, l]) => ({ id, ...l }))
-                .filter(l => l.status === 'borrowed')
-                .sort((a, b) => new Date(a.due_date) - new Date(b.due_date))
+                .filter(l => l.status === type)
+                .sort((a, b) => {
+                    if (type === 'returned') {
+                        return new Date(b.return_date) - new Date(a.return_date)
+                    }
+                    return new Date(a.due_date) - new Date(b.due_date)
+                })
 
             // Fetch book and user info
             const loansWithInfo = await Promise.all(
@@ -1031,16 +1061,18 @@ function LoansTable() {
 
     return (
         <div className="loans-table-container">
-            <h3 style={{ marginBottom: '1rem' }}>Peminjaman Aktif ({loans.length})</h3>
+            <h3 style={{ marginBottom: '1rem' }}>
+                {type === 'borrowed' ? `Peminjaman Aktif (${loans.length})` : `Buku Sudah Dikembalikan (${loans.length})`}
+            </h3>
             <div className="table-responsive">
                 <table className="admin-table">
                     <thead>
                         <tr>
                             <th>User</th>
                             <th>Buku</th>
-                            <th>Tenggat</th>
-                            <th>Status / Denda</th>
-                            <th>Perpanjang</th>
+                            <th>{type === 'borrowed' ? 'Tenggat' : 'Tgl Pinjam'}</th>
+                            <th>{type === 'borrowed' ? 'Status / Denda' : 'Tgl Kembali'}</th>
+                            {type === 'borrowed' && <th>Perpanjang</th>}
                             <th>Aksi</th>
                         </tr>
                     </thead>
@@ -1052,7 +1084,7 @@ function LoansTable() {
                                 const renewalCount = loan.renewal_count || 0
 
                                 return (
-                                    <tr key={loan.id} style={{ background: isOverdue ? '#fff1f2' : 'white' }}>
+                                    <tr key={loan.id} style={{ background: (type === 'borrowed' && isOverdue) ? '#fff1f2' : 'white' }}>
                                         <td>
                                             <div style={{ fontWeight: 500 }}>{loan.users?.name || 'Unknown'}</div>
                                             <div style={{ fontSize: '0.8rem', color: '#6b7280' }}>{loan.users?.email}</div>
@@ -1066,52 +1098,71 @@ function LoansTable() {
                                             </div>
                                         </td>
                                         <td>
-                                            {new Date(loan.due_date).toLocaleDateString('id-ID')}
-                                            <div style={{ fontSize: '0.75rem', color: '#6b7280' }}>
-                                                {renewalCount}x Perpanjang
-                                            </div>
-                                        </td>
-                                        <td>
-                                            {isOverdue ? (
-                                                <span className="role-badge" style={{ background: '#fee2e2', color: '#991b1b' }}>
-                                                    Telat - Rp {fine.toLocaleString()}
-                                                </span>
-                                            ) : (
-                                                <span className="role-badge" style={{ background: '#dcfce7', color: '#166534' }}>
-                                                    Dipinjam
-                                                </span>
+                                            {type === 'borrowed' 
+                                                ? new Date(loan.due_date).toLocaleDateString('id-ID')
+                                                : new Date(loan.borrow_date).toLocaleDateString('id-ID')
+                                            }
+                                            {type === 'borrowed' && (
+                                                <div style={{ fontSize: '0.75rem', color: '#6b7280' }}>
+                                                    {renewalCount}x Perpanjang
+                                                </div>
                                             )}
                                         </td>
                                         <td>
-                                            <button
-                                                className="btn btn-sm"
-                                                onClick={() => handleExtendLoan(loan)}
-                                                disabled={isOverdue} // Cannot extend if overdue usually, but admin might override? Let's disable to force return/fine handling first.
-                                                style={{
-                                                    background: isOverdue ? '#e5e7eb' : '#3b82f6',
-                                                    color: isOverdue ? '#9ca3af' : 'white',
-                                                    cursor: isOverdue ? 'not-allowed' : 'pointer'
-                                                }}
-                                            >
-                                                +5 Hari
-                                            </button>
+                                            {type === 'borrowed' ? (
+                                                isOverdue ? (
+                                                    <span className="role-badge" style={{ background: '#fee2e2', color: '#991b1b' }}>
+                                                        Telat - Rp {fine.toLocaleString()}
+                                                    </span>
+                                                ) : (
+                                                    <span className="role-badge" style={{ background: '#dcfce7', color: '#166534' }}>
+                                                        Dipinjam
+                                                    </span>
+                                                )
+                                            ) : (
+                                                <span style={{ fontSize: '0.9rem' }}>
+                                                    {new Date(loan.return_date).toLocaleDateString('id-ID')}
+                                                </span>
+                                            )}
                                         </td>
-                                        <td>
-                                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                        {type === 'borrowed' && (
+                                            <td>
                                                 <button
                                                     className="btn btn-sm"
-                                                    onClick={() => handleReturnBook(loan)}
-                                                    style={{ background: '#10b981', color: 'white' }}
+                                                    onClick={() => handleExtendLoan(loan)}
+                                                    disabled={isOverdue}
+                                                    style={{
+                                                        background: isOverdue ? '#e5e7eb' : '#3b82f6',
+                                                        color: isOverdue ? '#9ca3af' : 'white',
+                                                        cursor: isOverdue ? 'not-allowed' : 'pointer'
+                                                    }}
                                                 >
-                                                    {isOverdue ? 'Selesai & Lunas' : 'Kembalikan'}
+                                                    +5 Hari
                                                 </button>
+                                            </td>
+                                        )}
+                                        <td>
+                                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                                {type === 'borrowed' ? (
+                                                    <button
+                                                        className="btn btn-sm"
+                                                        onClick={() => handleReturnBook(loan)}
+                                                        style={{ background: '#10b981', color: 'white' }}
+                                                    >
+                                                        {isOverdue ? 'Selesai & Lunas' : 'Kembalikan'}
+                                                    </button>
+                                                ) : (
+                                                    <span className="role-badge" style={{ background: '#dcfce7', color: '#166534' }}>
+                                                        Selesai
+                                                    </span>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>
                                 )
                             })
                         ) : (
-                            <tr><td colSpan="6" className="text-center">Tidak ada peminjaman aktif</td></tr>
+                            <tr><td colSpan={type === 'borrowed' ? "6" : "5"} className="text-center">Tidak ada data</td></tr>
                         )}
                     </tbody>
                 </table>

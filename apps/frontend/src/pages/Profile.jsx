@@ -2,7 +2,7 @@ import { Link, useNavigate, useParams, Navigate } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { db, auth } from '../config/firebase'
-import { ref, get, update } from 'firebase/database'
+import { ref, get, update, set } from 'firebase/database'
 import { updatePassword, signInWithEmailAndPassword } from 'firebase/auth'
 import { PaymentService } from '../services/payment'
 import { useNotification } from '../components/Notification'
@@ -604,28 +604,31 @@ function Profile() {
                                             background: isOverdue ? '#fef2f2' : loan.status === 'returned' ? '#f0fdf4' : 'white',
                                             borderRadius: '12px', padding: '1rem', marginBottom: '0.75rem'
                                         }}>
-                                            <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                                                {loan.books?.cover && (
-                                                    <img src={loan.books.cover} alt={`Cover buku ${loan.books?.title || 'pinjaman'} - Salahuddin Library`} style={{ width: '45px', height: '60px', objectFit: 'cover', borderRadius: '6px' }} />
-                                                )}
-                                                <div style={{ flex: 1 }}>
-                                                    <strong>{loan.books?.title || 'Unknown Book'}</strong>
-                                                    <div style={{ fontSize: '0.85rem', color: '#6b7280', marginTop: '0.25rem' }}>
-                                                        {loan.status === 'returned' ? (
-                                                            <span style={{ color: '#10b981' }}>✓ Dikembalikan pada {new Date(loan.return_date).toLocaleDateString('id-ID')}</span>
-                                                        ) : isOverdue ? (
-                                                            <span style={{ color: '#dc2626', fontWeight: '600' }}>⚠ Terlambat {Math.abs(daysLeft)} hari (Denda: Rp {fineAmount.toLocaleString('id-ID')})</span>
-                                                        ) : (
-                                                            <span>Batas: {new Date(loan.due_date).toLocaleDateString('id-ID')} ({daysLeft} hari lagi)</span>
+                                            <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flex: 1 }}>
+                                                    {loan.books?.cover && (
+                                                        <img src={loan.books.cover} alt={`Cover buku ${loan.books?.title || 'pinjaman'} - Salahuddin Library`} style={{ width: '45px', height: '60px', objectFit: 'cover', borderRadius: '6px' }} />
+                                                    )}
+                                                    <div style={{ flex: 1 }}>
+                                                        <strong>{loan.books?.title || 'Unknown Book'}</strong>
+                                                        <div style={{ fontSize: '0.85rem', color: '#6b7280', marginTop: '0.25rem' }}>
+                                                            {loan.status === 'returned' ? (
+                                                                <span style={{ color: '#10b981' }}>✓ Dikembalikan pada {new Date(loan.return_date).toLocaleDateString('id-ID')}</span>
+                                                            ) : isOverdue ? (
+                                                                <span style={{ color: '#dc2626', fontWeight: '600' }}>⚠ Terlambat {Math.abs(daysLeft)} hari (Denda: Rp {fineAmount.toLocaleString('id-ID')})</span>
+                                                            ) : (
+                                                                <span>Batas: {new Date(loan.due_date).toLocaleDateString('id-ID')} ({daysLeft} hari lagi)</span>
+                                                            )}
+                                                        </div>
+                                                        {loan.status === 'borrowed' && (
+                                                            <div style={{ fontSize: '0.75rem', color: '#9ca3af', marginTop: '0.25rem' }}>
+                                                                Perpanjangan: {loan.renewal_count || 0}/3
+                                                            </div>
                                                         )}
                                                     </div>
-                                                    {loan.status === 'borrowed' && (
-                                                        <div style={{ fontSize: '0.75rem', color: '#9ca3af', marginTop: '0.25rem' }}>
-                                                            Perpanjangan: {loan.renewal_count || 0}/3
-                                                        </div>
-                                                    )}
                                                 </div>
-                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', alignItems: 'flex-end' }}>
                                                     {loan.status === 'borrowed' && (
                                                         <button onClick={() => handleReturnBook(loan)} className="btn btn-sm" style={{ background: '#3b82f6', color: '#fff', fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
                                                             Kembalikan
