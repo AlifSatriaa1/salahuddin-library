@@ -1,4 +1,22 @@
 node_modules
-.env
 dist
 .vercel
+.env
+
+# IDE / Editor
+.idea/
+.vscode/
+*.iml
+*.sw?
+
+# Credentials - NEVER COMMIT
+sftp.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+build_log.txt
+local.properties
+*.gradle/
