@@ -1,80 +1,103 @@
-# Development Docker Compose for Salahuddin Library
-# Sections:
-# 1. sal_lib_front_end    - React + Vite frontend for browser UI and developer hot reload
-# 2. sal_lib_api_server   - Node.js backend with Express and Nodemon as API service
-# 3. sal_lib_web_gateway  - Nginx reverse proxy serving frontend and routing traffic
-# 4. sal_lib_db_storage   - MySQL database storing library data and user records
+# Development Docker Compose untuk Salahuddin Library
+# Nama project compose ini untuk development environment
+
+name: sal_lib_dev  # Nama unik project compose, digunakan untuk penamaan network dan volume otomatis
 
 services:
-  # Frontend Service
-  # Technology: React, Vite
-  # Function: Hosts the browser SPA, provides UI for library users, and syncs local code changes to the container.
+
+  # ============================================================================
+  # SAL_LIB_FRONT_END - Service Frontend (React + Vite)
+  # ============================================================================
+  # Teknologi:  React (UI library) + Vite (build tool untuk development cepat)
+
   sal_lib_front_end:
-    build:
-      context: ./apps/frontend
-      dockerfile: Dockerfile.dev
-    container_name: sal_lib_frontend_dev
+    build:  # Build image dari Dockerfile.dev di folder frontend
+      context: ./apps/frontend  # Sumber code aplikasi React yang akan di-build
+      dockerfile: Dockerfile.dev  # File untuk configuration build development
+    container_name: sal_lib_frontend_dev  # Nama container untuk kemudahan identifikasi
     volumes:
-      - ./apps/frontend:/app
-      - /app/node_modules # Agar node_modules container tidak tertimpa folder lokal
+      - ./apps/frontend:/app  # Mount code lokal ke /app dalam container untuk hot reload
+      - /app/node_modules  # Isolasi node_modules container, tidak tertimpa folder lokal
     ports:
-      - "5173:5173"
+      - "5173:5173"  # Expose port development Vite server ke localhost:5173
     networks:
-      - sal_lib_network_dev
+      - sal_lib_network_dev  # Koneksi ke network bridge untuk komunikasi antar service
 
-  # Backend API Service
-  # Technology: Node.js, Express, Nodemon
-  # Function: Provides REST APIs, authentication, database access, and business logic for the app.
+  # ============================================================================
+  # SAL_LIB_API_SERVER - Service Backend API (Node.js + Express + Nodemon)
+  # ============================================================================
+
   sal_lib_api_server:
-    build:
-      context: ./apps/backend
-      dockerfile: Dockerfile.dev
-    container_name: sal_lib_backend_dev
+    build:  # Build image dari Dockerfile.dev di folder backend
+      context: ./apps/backend  # Sumber code aplikasi Node.js yang akan di-build
+      dockerfile: Dockerfile.dev  # File untuk configuration build development dengan Nodemon
+    container_name: sal_lib_backend_dev  # Nama container untuk kemudahan identifikasi
     env_file:
-      - ./apps/backend/.env
+      - ./apps/backend/.env  # Load environment variables dari file .env (database, API keys, etc)
     volumes:
-      - ./apps/backend:/app
-      - /app/node_modules
+      - ./apps/backend:/app  # Mount code lokal ke /app, auto-restart via Nodemon saat ada perubahan
+      - /app/node_modules  # Isolasi node_modules container, tidak tertimpa folder lokal
     ports:
-      - "5000:5000"
+      - "5000:5000"  # Expose port Express server ke localhost:5000
     networks:
-      - sal_lib_network_dev
+      - sal_lib_network_dev  # Koneksi ke network bridge untuk komunikasi dengan frontend & database
 
-  # Web Gateway Service
-  # Technology: Nginx
-  # Function: Acts as a reverse proxy for the frontend and backend, and serves static content via HTTP.
+  # ============================================================================
+  # SAL_LIB_WEB_GATEWAY - Service Gateway Web (Nginx)
+  # ============================================================================
+  # Teknologi:  Nginx Alpine (lightweight, fast web server)
+  # Fungsi:     Bertindak sebagai reverse proxy, mengarahkan request ke frontend atau backend,
+  #             serving static files, load balancing, dan handling SSL/TLS di production.
+  # Direktori:  ./default.dev.conf - Konfigurasi Nginx untuk routing rules dan server blocks.
+  # Port:       18115 (HTTP Public Interface)
+  # Dependencies: Bergantung pada sal_lib_front_end dan sal_lib_api_server untuk ready
+  #
   sal_lib_web_gateway:
-    image: nginx:alpine
-    container_name: sal_lib_web_dev
+    image: nginx:alpine  # Image siap pakai Nginx Alpine versi terbaru (lightweight & fast)
+    container_name: sal_lib_web_dev  # Nama container untuk kemudahan identifikasi
     ports:
-      - "18115:80"
+      - "18115:80"  # Expose port HTTP public interface ke localhost:18115, port internal 80
     volumes:
-      - ./default.dev.conf:/etc/nginx/conf.d/default.conf
+      - ./default.dev.conf:/etc/nginx/conf.d/default.conf  # Mount konfigurasi routing & server blocks Nginx
     depends_on:
-      - sal_lib_front_end
-      - sal_lib_api_server
+      - sal_lib_front_end  # Tunggu frontend service siap sebelum gateway start
+      - sal_lib_api_server  # Tunggu backend service siap sebelum gateway start
     networks:
-      - sal_lib_network_dev
+      - sal_lib_network_dev  # Koneksi ke network bridge untuk komunikasi dengan frontend & backend
 
-  # Database Service
-  # Technology: MySQL 8.0
-  # Function: Stores persistent library data, user accounts, and application state.
+  # ============================================================================
+  # SAL_LIB_DB_STORAGE - Service Database (MySQL 8.0)
+  # ============================================================================
+  # Teknologi:  MySQL 8.0 (Relational Database Management System)
+  # Fungsi:     Menyimpan semua data persisten aplikasi seperti buku, user, transaksi,
+  #             payment records, dan informasi keanggotaan perpustakaan.
+  # Direktori:  /var/lib/mysql (Volume persistence - sal_lib_db_data_dev)
+  # Port:       3345 (MySQL Server - untuk development access)
+  # Credentials: Root user dengan password 'root', database 'salahuddin_library'
+  # Catatan:    Data akan tersimpan di volume Docker, bukan hilang saat container restart
+  #
   sal_lib_db_storage:
-    image: mysql:8.0
-    container_name: sal_lib_db_dev
-    environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: salahuddin_library
+    image: mysql:8.0  # Image siap pakai MySQL versi 8.0 (stable & production-ready)
+    container_name: sal_lib_db_dev  # Nama container untuk kemudahan identifikasi
+    environment:  # Set environment variables untuk konfigurasi MySQL
+      MYSQL_ROOT_PASSWORD: root  # Password user root (hanya untuk development, jangan pakai di production)
+      MYSQL_DATABASE: salahuddin_library  # Nama database yang otomatis di-create saat container start
     ports:
-      - "3345:3306"
+      - "3345:3306"  # Expose port MySQL ke localhost:3345, port internal 3306
     volumes:
-      - sal_lib_db_data_dev:/var/lib/mysql
+      - sal_lib_db_data_dev:/var/lib/mysql  # Persist data MySQL ke volume Docker, cegah data loss saat container dihapus
     networks:
-      - sal_lib_network_dev
+      - sal_lib_network_dev  # Koneksi ke network bridge untuk komunikasi dengan backend service
+
+# ============================================================================
+# NETWORK & VOLUME CONFIGURATION
+# ============================================================================
 
 networks:
+  # sal_lib_network_dev: Bridge network untuk komunikasi antar service (frontend, backend, database)
   sal_lib_network_dev:
     driver: bridge
 
 volumes:
+  # sal_lib_db_data_dev: Persisten storage untuk data MySQL, mencegah data loss saat container dihapus
   sal_lib_db_data_dev:
