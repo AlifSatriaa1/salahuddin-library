@@ -4,7 +4,6 @@
 -- Source     : Firebase Realtime Database + Cloudinary (URLs embedded as TEXT)
 -- Encoding   : UTF-8 / utf8mb4
 -- Engine     : InnoDB
--- Compatible : MySQL 5.7+ / MariaDB 10.3+
 -- =============================================================================
 
 SET NAMES utf8mb4;
