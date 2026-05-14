@@ -99,11 +99,11 @@ function Books() {
         }
     }
 
-    const [visibleCount, setVisibleCount] = useState(10)
+    const [visibleCount, setVisibleCount] = useState(50)
 
     // Reset pagination when filter changes
     useEffect(() => {
-        setVisibleCount(10)
+        setVisibleCount(50)
     }, [activeCategory, searchQuery])
 
     const filteredBooks = books.filter(book => {
@@ -117,7 +117,7 @@ function Books() {
     const displayedBooks = filteredBooks.slice(0, visibleCount)
 
     // Calculate total stock
-    const totalBooks = books.reduce((sum, book) => sum + (book.stock || 0), 0)
+    const totalBooks = filteredBooks.reduce((sum, book) => sum + (book.stock || 0), 0)
 
     return (
         <div className="app">
@@ -309,7 +309,7 @@ function Books() {
                             {filteredBooks.length > visibleCount && (
                                 <div style={{ display: 'flex', justifyContent: 'center', marginTop: '2rem' }}>
                                     <button
-                                        onClick={() => setVisibleCount(prev => prev + 10)}
+                                        onClick={() => setVisibleCount(prev => prev + 50)}
                                         className="btn btn-secondary"
                                         style={{ minWidth: '200px' }}
                                     >
