@@ -524,7 +524,9 @@ function AdminDashboard() {
                                                 padding: '0.75rem 1rem 0.75rem 2.5rem',
                                                 border: '1px solid #e5e7eb',
                                                 borderRadius: '8px',
-                                                fontSize: '0.95rem'
+                                                fontSize: '0.95rem',
+                                                background: 'white',
+                                                color: '#111827'
                                             }}
                                         />
                                         <div style={{
@@ -1093,7 +1095,9 @@ function LoansTable({ type = 'borrowed' }) {
                             padding: '0.6rem 1rem 0.6rem 2.5rem',
                             borderRadius: '10px',
                             border: '1px solid #e5e7eb',
-                            fontSize: '0.9rem'
+                            fontSize: '0.9rem',
+                            background: 'white',
+                            color: '#111827'
                         }}
                     />
                     <svg style={{ position: 'absolute', left: '0.8rem', top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
