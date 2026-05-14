@@ -345,7 +345,11 @@ function AdminDashboard() {
                     </button>
                     <button onClick={() => { setActiveTab('loans'); setSidebarOpen(false); }} className={`sidebar-link ${activeTab === 'loans' ? 'active' : ''}`}>
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
-                        Peminjaman
+                        Peminjaman Aktif
+                    </button>
+                    <button onClick={() => { setActiveTab('returned'); setSidebarOpen(false); }} className={`sidebar-link ${activeTab === 'returned' ? 'active' : ''}`}>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                        Riwayat Kembali
                     </button>
                     <button onClick={() => { setActiveTab('tags'); setSidebarOpen(false); }} className={`sidebar-link ${activeTab === 'tags' ? 'active' : ''}`}>
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>
@@ -1065,11 +1069,37 @@ function LoansTable({ type = 'borrowed' }) {
         return 0
     }
 
+    const [searchTerm, setSearchTerm] = useState('')
+    const filteredLoans = loans.filter(loan => 
+        (loan.users?.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (loan.users?.email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (loan.books?.title || '').toLowerCase().includes(searchTerm.toLowerCase())
+    )
+
     return (
         <div className="loans-table-container">
-            <h3 style={{ marginBottom: '1rem' }}>
-                {type === 'borrowed' ? `Peminjaman Aktif (${loans.length})` : `Buku Sudah Dikembalikan (${loans.length})`}
-            </h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+                <h3 style={{ margin: 0 }}>
+                    {type === 'borrowed' ? `Peminjaman Aktif (${loans.length})` : `Riwayat Pengembalian Buku (${loans.length})`}
+                </h3>
+                <div style={{ position: 'relative', minWidth: '300px' }}>
+                    <input
+                        type="text"
+                        placeholder="Cari user atau judul buku..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        style={{
+                            width: '100%',
+                            padding: '0.6rem 1rem 0.6rem 2.5rem',
+                            borderRadius: '10px',
+                            border: '1px solid #e5e7eb',
+                            fontSize: '0.9rem'
+                        }}
+                    />
+                    <svg style={{ position: 'absolute', left: '0.8rem', top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                </div>
+            </div>
+
             <div className="table-responsive">
                 <table className="admin-table">
                     <thead>
@@ -1083,8 +1113,8 @@ function LoansTable({ type = 'borrowed' }) {
                         </tr>
                     </thead>
                     <tbody>
-                        {loans.slice(0, visibleCount).length > 0 ? (
-                            loans.slice(0, visibleCount).map(loan => {
+                        {filteredLoans.slice(0, visibleCount).length > 0 ? (
+                            filteredLoans.slice(0, visibleCount).map(loan => {
                                 const fine = calculateFine(loan.due_date)
                                 const isOverdue = fine > 0
                                 const renewalCount = loan.renewal_count || 0
@@ -1092,24 +1122,29 @@ function LoansTable({ type = 'borrowed' }) {
                                 return (
                                     <tr key={loan.id} style={{ background: (type === 'borrowed' && isOverdue) ? '#fff1f2' : 'white' }}>
                                         <td>
-                                            <div style={{ fontWeight: 500 }}>{loan.users?.name || 'Unknown'}</div>
-                                            <div style={{ fontSize: '0.8rem', color: '#6b7280' }}>{loan.users?.email}</div>
+                                            <div style={{ fontWeight: 600, color: '#111827' }}>{loan.users?.name || 'Unknown'}</div>
+                                            <div style={{ fontSize: '0.75rem', color: '#6b7280' }}>{loan.users?.email}</div>
                                         </td>
                                         <td>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                                {loan.books?.cover && <img src={loan.books.cover} alt={`Cover buku ${loan.books?.title || 'pinjaman'}`} style={{ width: 30, height: 45, borderRadius: 4, objectFit: 'cover' }} />}
-                                                <span title={loan.books?.title} style={{ maxWidth: '150px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                    {loan.books?.title}
-                                                </span>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                                {loan.books?.cover && <img src={loan.books.cover} alt={`Cover ${loan.books?.title}`} style={{ width: 32, height: 48, borderRadius: 4, objectFit: 'cover', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }} />}
+                                                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                                    <span title={loan.books?.title} style={{ fontWeight: 500, maxWidth: '180px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                        {loan.books?.title}
+                                                    </span>
+                                                    <span style={{ fontSize: '0.7rem', color: '#6b7280' }}>{loan.books?.author}</span>
+                                                </div>
                                             </div>
                                         </td>
                                         <td>
-                                            {type === 'borrowed' 
-                                                ? new Date(loan.due_date).toLocaleDateString('id-ID')
-                                                : new Date(loan.borrow_date).toLocaleDateString('id-ID')
-                                            }
+                                            <div style={{ fontSize: '0.9rem', fontWeight: 500 }}>
+                                                {type === 'borrowed' 
+                                                    ? new Date(loan.due_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
+                                                    : new Date(loan.borrow_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
+                                                }
+                                            </div>
                                             {type === 'borrowed' && (
-                                                <div style={{ fontSize: '0.75rem', color: '#6b7280' }}>
+                                                <div style={{ fontSize: '0.7rem', color: '#6b7280' }}>
                                                     {renewalCount}x Perpanjang
                                                 </div>
                                             )}
@@ -1117,18 +1152,23 @@ function LoansTable({ type = 'borrowed' }) {
                                         <td>
                                             {type === 'borrowed' ? (
                                                 isOverdue ? (
-                                                    <span className="role-badge" style={{ background: '#fee2e2', color: '#991b1b' }}>
+                                                    <span className="role-badge" style={{ background: '#fee2e2', color: '#991b1b', fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}>
                                                         Telat - Rp {fine.toLocaleString()}
                                                     </span>
                                                 ) : (
-                                                    <span className="role-badge" style={{ background: '#dcfce7', color: '#166534' }}>
+                                                    <span className="role-badge" style={{ background: '#dcfce7', color: '#166534', fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}>
                                                         Dipinjam
                                                     </span>
                                                 )
                                             ) : (
-                                                <span style={{ fontSize: '0.9rem' }}>
-                                                    {new Date(loan.return_date).toLocaleDateString('id-ID')}
-                                                </span>
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                                    <span style={{ fontSize: '0.9rem', fontWeight: 600, color: '#059669' }}>
+                                                        {new Date(loan.return_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                                    </span>
+                                                    <span className="role-badge" style={{ background: '#f3f4f6', color: '#374151', fontSize: '0.65rem', padding: '0.1rem 0.4rem', width: 'fit-content' }}>
+                                                        Selesai
+                                                    </span>
+                                                </div>
                                             )}
                                         </td>
                                         {type === 'borrowed' && (
@@ -1138,9 +1178,11 @@ function LoansTable({ type = 'borrowed' }) {
                                                     onClick={() => handleExtendLoan(loan)}
                                                     disabled={isOverdue}
                                                     style={{
-                                                        background: isOverdue ? '#e5e7eb' : '#3b82f6',
+                                                        background: isOverdue ? '#f3f4f6' : '#3b82f6',
                                                         color: isOverdue ? '#9ca3af' : 'white',
-                                                        cursor: isOverdue ? 'not-allowed' : 'pointer'
+                                                        cursor: isOverdue ? 'not-allowed' : 'pointer',
+                                                        padding: '0.4rem 0.6rem',
+                                                        fontSize: '0.75rem'
                                                     }}
                                                 >
                                                     +5 Hari
@@ -1153,13 +1195,14 @@ function LoansTable({ type = 'borrowed' }) {
                                                     <button
                                                         className="btn btn-sm"
                                                         onClick={() => handleReturnBook(loan)}
-                                                        style={{ background: '#10b981', color: 'white' }}
+                                                        style={{ background: '#10b981', color: 'white', padding: '0.4rem 0.8rem', fontSize: '0.75rem' }}
                                                     >
-                                                        {isOverdue ? 'Selesai & Lunas' : 'Kembalikan'}
+                                                        {isOverdue ? 'Selesaikan Denda' : 'Kembalikan'}
                                                     </button>
                                                 ) : (
-                                                    <span className="role-badge" style={{ background: '#dcfce7', color: '#166534' }}>
-                                                        Selesai
+                                                    <span style={{ color: '#059669', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.85rem', fontWeight: 600 }}>
+                                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                                        Closed
                                                     </span>
                                                 )}
                                             </div>
@@ -1168,13 +1211,13 @@ function LoansTable({ type = 'borrowed' }) {
                                 )
                             })
                         ) : (
-                            <tr><td colSpan={type === 'borrowed' ? "6" : "5"} className="text-center">Tidak ada data</td></tr>
+                            <tr><td colSpan={type === 'borrowed' ? "6" : "5"} className="text-center" style={{ padding: '3rem', color: '#6b7280' }}>Data tidak ditemukan</td></tr>
                         )}
                     </tbody>
                 </table>
             </div>
 
-            {visibleCount < loans.length && (
+            {visibleCount < filteredLoans.length && (
                 <div style={{ display: 'flex', justifyContent: 'center', marginTop: '1.5rem' }}>
                     <button
                         className="btn btn-outline"
