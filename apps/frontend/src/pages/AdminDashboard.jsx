@@ -1361,6 +1361,7 @@ function KtpVerificationTable() {
 
     const handleReject = async (userId, ktpUrl) => {
         const reason = prompt('Alasan penolakan (opsional):')
+        if (reason === null) return // Canceled the prompt
 
         try {
             // Try to delete the KTP file from Firebase Storage if it exists
@@ -1373,7 +1374,11 @@ function KtpVerificationTable() {
                 }
             }
 
-            await update(ref(db, `users/${userId}`), { member_status: 'non-member', ktp_url: null })
+            await update(ref(db, `users/${userId}`), { 
+                member_status: 'rejected', 
+                rejection_reason: reason.trim() || 'Foto KTP kurang jelas atau tidak valid.',
+                ktp_url: null 
+            })
             toast.warning('KTP ditolak. Foto dihapus agar tidak memenuhi memori.')
             fetchPendingUsers()
         } catch (error) {

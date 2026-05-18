@@ -69,6 +69,7 @@ export function AuthProvider({ children }) {
                 programsJoined: userData?.programs_joined || [],
                 // Membership fields
                 memberStatus: userData?.member_status || 'non-member',
+                rejectionReason: userData?.rejection_reason || null,
                 ktpUrl: userData?.ktp_url || null,
                 paymentStatus: userData?.payment_status || 'unpaid',
                 paymentDate: userData?.payment_date || null,

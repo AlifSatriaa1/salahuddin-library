@@ -5381,6 +5381,10 @@ body {
   color: #b8860b !important;
 }
 
+.status-badge.rejected {
+  color: #dc2626 !important;
+}
+
 /* Status card styling based on membership */
 .profile-stat-card.status-card.verified {
   border-color: #10b981;
@@ -5395,6 +5399,11 @@ body {
 .profile-stat-card.status-card.pending {
   border-color: #d4af37;
   background: linear-gradient(135deg, #fffbeb, #fef3c7);
+}
+
+.profile-stat-card.status-card.rejected {
+  border-color: #ef4444;
+  background: linear-gradient(135deg, #fef2f2, #fee2e2);
 }
 
 /* ===============================

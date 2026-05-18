@@ -13,7 +13,7 @@ import '../App.css'
 
 // Member Upgrade Section Component
 // Flow: 1. Upload KTP → 2. Wait Admin Approval → 3. Payment
-function MemberUpgradeSection({ userId, currentStatus, userEmail, userName }) {
+function MemberUpgradeSection({ userId, currentStatus, userEmail, userName, rejectionReason }) {
     const navigate = useNavigate()
     const getStep = () => {
         if (currentStatus === 'pending_approval' || currentStatus === 'approved') return 2
@@ -64,7 +64,8 @@ function MemberUpgradeSection({ userId, currentStatus, userEmail, userName }) {
             const userRef = ref(db, `users/${userId}`)
             await update(userRef, {
                 ktp_url: publicUrl,
-                member_status: 'pending_approval'
+                member_status: 'pending_approval',
+                rejection_reason: null
             })
 
             toast.success('KTP berhasil diupload! Silakan lanjutkan ke pembayaran.')
@@ -148,6 +149,33 @@ function MemberUpgradeSection({ userId, currentStatus, userEmail, userName }) {
                     </div>
 
                     <input type="file" id="upgrade-ktp-file" accept="image/*" onChange={handleKtpChange} style={{ display: 'none' }} />
+
+                    {/* Kotak Pesan Penolakan KTP */}
+                    {currentStatus === 'rejected' && rejectionReason && (
+                        <div style={{
+                            marginTop: '1.25rem',
+                            padding: '1.25rem',
+                            background: '#fef2f2',
+                            border: '1.5px solid #f87171',
+                            borderRadius: '16px',
+                            color: '#991b1b',
+                            fontSize: '0.925rem',
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: '0.75rem',
+                            textAlign: 'left',
+                            boxShadow: '0 4px 6px -1px rgba(220, 38, 38, 0.05)'
+                        }}>
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ flexShrink: 0, marginTop: 2, color: '#dc2626' }}><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                            <div>
+                                <strong style={{ display: 'block', marginBottom: '0.35rem', color: '#7f1d1d', fontSize: '0.975rem' }}>Pendaftaran KTP Ditolak Admin:</strong>
+                                <span style={{ lineHeight: '1.5', display: 'block', fontStyle: 'italic', background: 'rgba(254, 226, 226, 0.5)', padding: '0.5rem 0.75rem', borderRadius: '8px', borderLeft: '3px solid #f87171', color: '#991b1b', marginBottom: '0.5rem' }}>
+                                    "{rejectionReason}"
+                                </span>
+                                <span style={{ display: 'block', color: '#b91c1c', fontWeight: 500, fontSize: '0.85rem' }}>Silakan perbaiki dokumen Anda, lalu klik kotak di atas untuk mengunggah ulang foto KTP baru.</span>
+                            </div>
+                        </div>
+                    )}
 
                     <button
                         className="btn btn-primary"
@@ -318,7 +346,9 @@ function Profile() {
                 id,
                 joinDate: data.join_date ? new Date(data.join_date).toLocaleDateString('id-ID') : '-',
                 donatedBooks: data.donated_books || 0,
-                programsJoined: data.programs_joined || []
+                programsJoined: data.programs_joined || [],
+                memberStatus: data.member_status || 'non-member',
+                rejectionReason: data.rejection_reason || null
             })
         } catch (error) {
             console.error("Error fetching user:", error)
@@ -532,7 +562,7 @@ function Profile() {
                                 <span className="stat-label">Sedang Dipinjam</span>
                             </div>
                         </div>
-                        <div className={`profile-stat-card status-card ${profileUser?.memberStatus === 'verified' ? 'verified' : (profileUser?.memberStatus === 'pending_approval' || profileUser?.memberStatus === 'approved') ? 'pending' : 'non-member'}`}>
+                        <div className={`profile-stat-card status-card ${profileUser?.memberStatus === 'verified' ? 'verified' : (profileUser?.memberStatus === 'pending_approval' || profileUser?.memberStatus === 'approved') ? 'pending' : profileUser?.memberStatus === 'rejected' ? 'rejected' : 'non-member'}`}>
                             <span className="stat-icon">
                                 {profileUser?.memberStatus === 'verified' ? (
                                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L3 7V12C3 17.55 6.84 22.74 12 24C17.16 22.74 21 17.55 21 12V7L12 2Z" fill="#10b981" /><path d="M10 15.17L7.41 12.59L6 14L10 18L18 10L16.59 8.59L10 15.17Z" fill="white" /></svg>
@@ -543,11 +573,12 @@ function Profile() {
                                 )}
                             </span>
                             <div>
-                                <span className={`stat-value status-badge ${profileUser?.memberStatus === 'verified' ? 'verified' : (profileUser?.memberStatus === 'pending_approval' || profileUser?.memberStatus === 'approved') ? 'pending' : 'non-member'}`}>
+                                <span className={`stat-value status-badge ${profileUser?.memberStatus === 'verified' ? 'verified' : (profileUser?.memberStatus === 'pending_approval' || profileUser?.memberStatus === 'approved') ? 'pending' : profileUser?.memberStatus === 'rejected' ? 'rejected' : 'non-member'}`}>
                                     {profileUser?.role === 'admin' ? 'Admin' :
                                         profileUser?.memberStatus === 'verified' ? 'Member Verified' :
                                             profileUser?.memberStatus === 'approved' ? 'Menunggu Pembayaran' :
                                                 profileUser?.memberStatus === 'pending_approval' ? 'Menunggu Verifikasi' :
+                                                    profileUser?.memberStatus === 'rejected' ? 'Pendaftaran Ditolak' :
                                                     'Non-Member'}
                                 </span>
                                 <span className="stat-label">Status Keanggotaan</span>
@@ -557,7 +588,13 @@ function Profile() {
 
                     {/* Upgrade to Member Section */}
                     {profileUser?.role !== 'admin' && profileUser?.memberStatus !== 'verified' && (
-                        <MemberUpgradeSection userId={profileUser?.id} currentStatus={profileUser?.memberStatus} userEmail={profileUser?.email} userName={profileUser?.name} />
+                        <MemberUpgradeSection 
+                            userId={profileUser?.id} 
+                            currentStatus={profileUser?.memberStatus} 
+                            userEmail={profileUser?.email} 
+                            userName={profileUser?.name} 
+                            rejectionReason={profileUser?.rejectionReason} 
+                        />
                     )}
 
                     {/* Active Loans Section */}
