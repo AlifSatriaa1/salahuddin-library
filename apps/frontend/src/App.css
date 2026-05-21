@@ -8596,3 +8596,308 @@ h2 {
 .program-card-link:hover .program-card {
   box-shadow: var(--shadow-card);
 }
+
+/* ================================================
+   REGISTER PAGE — PERKS PANEL
+   ================================================ */
+.auth-left-panel--register .auth-left-content {
+  max-width: 370px;
+  text-align: left;
+}
+
+.auth-left-panel--register .auth-brand-logo {
+  margin-left: 0;
+}
+
+.auth-left-panel--register .auth-brand-title {
+  text-align: left;
+}
+
+.auth-register-perks {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  margin-top: 2rem;
+}
+
+.auth-perk-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  padding: 1rem 1.1rem;
+  backdrop-filter: blur(8px);
+  transition: background 0.25s ease, transform 0.2s ease;
+}
+
+.auth-perk-item:hover {
+  background: rgba(255, 255, 255, 0.14);
+  transform: translateX(4px);
+}
+
+.auth-perk-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: white;
+}
+
+.auth-perk-item>div:last-child {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.auth-perk-item strong {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: white;
+}
+
+.auth-perk-item span {
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.65);
+  line-height: 1.5;
+}
+
+/* ================================================
+   NAVBAR — ACTIVE STATES & SCROLLED
+   ================================================ */
+.nav-link-active {
+  color: var(--primary) !important;
+}
+
+.nav-link-active::after {
+  width: 100% !important;
+}
+
+.navbar-scrolled {
+  box-shadow: 0 4px 24px rgba(4, 120, 87, 0.12), 0 1px 6px rgba(0, 0, 0, 0.08) !important;
+  background: rgba(255, 255, 255, 0.96) !important;
+}
+
+/* ================================================
+   FOOTER — PREMIUM DARK DESIGN
+   ================================================ */
+.footer-premium {
+  background: #064e3b;
+  color: rgba(255, 255, 255, 0.8);
+  position: relative;
+  margin-top: 0;
+}
+
+.footer-wave {
+  display: block;
+  line-height: 0;
+  overflow: hidden;
+}
+
+.footer-wave svg {
+  display: block;
+  width: 100%;
+  height: 60px;
+}
+
+.footer-premium-body {
+  padding: 3.5rem 0 2.5rem;
+}
+
+.footer-premium-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 2rem;
+}
+
+.footer-premium-container.footer-bottom-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.footer-premium-body .footer-premium-container {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1.5fr;
+  gap: 3rem;
+}
+
+@media (max-width: 900px) {
+  .footer-premium-body .footer-premium-container {
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+  }
+}
+
+@media (max-width: 560px) {
+  .footer-premium-body .footer-premium-container {
+    grid-template-columns: 1fr;
+  }
+
+  .footer-premium-container.footer-bottom-row {
+    flex-direction: column;
+    text-align: center;
+  }
+}
+
+.footer-premium-logo {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.footer-premium-logo img {
+  height: 36px;
+  width: auto;
+  filter: brightness(0) invert(1);
+  opacity: 0.9;
+}
+
+.footer-premium-logo span {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: white;
+  letter-spacing: -0.3px;
+}
+
+.footer-premium-tagline {
+  font-size: 0.9rem;
+  line-height: 1.75;
+  color: rgba(255, 255, 255, 0.6);
+  margin-bottom: 1.5rem;
+  max-width: 280px;
+}
+
+.footer-whatsapp-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  padding: 0.6rem 1.1rem;
+  border-radius: 50px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 0.25s ease;
+}
+
+.footer-whatsapp-cta:hover {
+  background: #25d366;
+  border-color: #25d366;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(37, 211, 102, 0.35);
+}
+
+.footer-premium-heading {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: rgba(255, 255, 255, 0.45);
+  margin-bottom: 1.2rem;
+}
+
+.footer-premium-links {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.footer-premium-links li a,
+.footer-premium-links li span {
+  font-size: 0.92rem;
+  color: rgba(255, 255, 255, 0.7);
+  text-decoration: none;
+  transition: color 0.2s ease, padding-left 0.2s ease;
+  display: block;
+}
+
+.footer-premium-links li a:hover {
+  color: white;
+  padding-left: 4px;
+}
+
+.footer-premium-contact {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.footer-contact-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.footer-contact-row svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.footer-contact-row a {
+  color: rgba(255, 255, 255, 0.7);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.footer-contact-row a:hover {
+  color: white;
+}
+
+.footer-member-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(212, 175, 55, 0.12);
+  border: 1px solid rgba(212, 175, 55, 0.3);
+  border-radius: 8px;
+  padding: 0.5rem 0.85rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #d4af37;
+  margin-top: 0.3rem;
+}
+
+.footer-premium-bottom {
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 1.25rem 0;
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.footer-copyright {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.45);
+  margin: 0;
+}
+
+.footer-bottom-links {
+  display: flex;
+  gap: 1.5rem;
+}
+
+.footer-bottom-links a {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.5);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.footer-bottom-links a:hover {
+  color: white;
+}

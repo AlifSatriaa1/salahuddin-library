@@ -11,30 +11,23 @@ function Navbar() {
     // Smart navbar - hide on scroll down, show on scroll up
     const [isVisible, setIsVisible] = useState(true)
     const [lastScrollY, setLastScrollY] = useState(0)
+    const [scrolled, setScrolled] = useState(false)
 
     useEffect(() => {
         const handleScroll = () => {
             const currentScrollY = window.scrollY
-
-            // Always show navbar at the top of the page
+            setScrolled(currentScrollY > 20)
             if (currentScrollY < 100) {
                 setIsVisible(true)
             } else if (currentScrollY > lastScrollY) {
-                // Scrolling down - hide navbar
                 setIsVisible(false)
             } else {
-                // Scrolling up - show navbar
                 setIsVisible(true)
             }
-
             setLastScrollY(currentScrollY)
         }
-
         window.addEventListener('scroll', handleScroll, { passive: true })
-
-        return () => {
-            window.removeEventListener('scroll', handleScroll)
-        }
+        return () => window.removeEventListener('scroll', handleScroll)
     }, [lastScrollY])
 
     // Prevent body scroll when mobile menu is open
@@ -52,28 +45,21 @@ function Navbar() {
         }
     }, [isMenuOpen])
 
-    // Handle scroll to section (works from any page)
     const scrollToSection = (sectionId) => {
-        setIsMenuOpen(false) // Close mobile menu
-
+        setIsMenuOpen(false)
         if (location.pathname !== '/') {
-            // If not on home page, navigate to home first, then scroll
             navigate('/')
-            // Wait for navigation, then scroll
             setTimeout(() => {
                 const element = document.getElementById(sectionId)
-                if (element) {
-                    element.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                }
+                if (element) element.scrollIntoView({ behavior: 'smooth', block: 'start' })
             }, 100)
         } else {
-            // Already on home page, just scroll
             const element = document.getElementById(sectionId)
-            if (element) {
-                element.scrollIntoView({ behavior: 'smooth', block: 'start' })
-            }
+            if (element) element.scrollIntoView({ behavior: 'smooth', block: 'start' })
         }
     }
+
+    const isActive = (path) => location.pathname === path
 
     return (
         <>
@@ -83,7 +69,7 @@ function Navbar() {
                 onClick={() => setIsMenuOpen(false)}
             />
 
-            <nav className={`navbar ${isVisible ? 'navbar-visible' : 'navbar-hidden'}`}>
+            <nav className={`navbar ${isVisible ? 'navbar-visible' : 'navbar-hidden'} ${scrolled ? 'navbar-scrolled' : ''}`}>
                 <div className="nav-container">
                     <Link to="/" className="nav-logo">
                         <img src="/images/logo.svg" alt="" className="logo-image" />
@@ -108,13 +94,23 @@ function Navbar() {
 
                     {/* Navigation Links */}
                     <ul className={`nav-links ${isMenuOpen ? 'active' : ''}`}>
-                        <li><Link to="/" onClick={() => setIsMenuOpen(false)}>Home</Link></li>
-                        <li><Link to="/books" onClick={() => setIsMenuOpen(false)}>Buku</Link></li>
-                        <li><a href="#about" onClick={(e) => { e.preventDefault(); scrollToSection('about'); }}>About</a></li>
-                        <li><a href="#donasi" onClick={(e) => { e.preventDefault(); scrollToSection('donasi'); }}>Donasi</a></li>
-                        <li><Link to="/informasi" onClick={() => setIsMenuOpen(false)}>Informasi</Link></li>
+                        <li>
+                            <Link to="/" className={isActive('/') ? 'nav-link-active' : ''} onClick={() => setIsMenuOpen(false)}>Home</Link>
+                        </li>
+                        <li>
+                            <Link to="/books" className={isActive('/books') ? 'nav-link-active' : ''} onClick={() => setIsMenuOpen(false)}>Buku</Link>
+                        </li>
+                        <li>
+                            <a href="#about" onClick={(e) => { e.preventDefault(); scrollToSection('about'); }}>About</a>
+                        </li>
+                        <li>
+                            <a href="#donasi" onClick={(e) => { e.preventDefault(); scrollToSection('donasi'); }}>Donasi</a>
+                        </li>
+                        <li>
+                            <Link to="/informasi" className={isActive('/informasi') ? 'nav-link-active' : ''} onClick={() => setIsMenuOpen(false)}>Informasi</Link>
+                        </li>
 
-                        {/* Mobile Auth Section - Always visible in mobile menu */}
+                        {/* Mobile Auth Section */}
                         <li className="nav-auth mobile-auth">
                             {user ? (
                                 <Link to="/profile" className="nav-profile-btn" onClick={() => setIsMenuOpen(false)}>
@@ -160,8 +156,8 @@ function Navbar() {
                                 </Link>
                             ) : (
                                 <div className="nav-auth-buttons">
-                                    <Link to="/login" className="nav-login-btn">Masuk</Link>
-                                    <Link to="/register" className="nav-register-btn">Daftar</Link>
+                                    <Link to="/login" className={`nav-login-btn ${isActive('/login') ? 'nav-btn-active' : ''}`}>Masuk</Link>
+                                    <Link to="/register" className={`nav-register-btn ${isActive('/register') ? 'nav-btn-active' : ''}`}>Daftar</Link>
                                 </div>
                             )}
                         </li>
